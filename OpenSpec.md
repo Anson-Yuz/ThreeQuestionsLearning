@@ -11159,3 +11159,1013 @@ chmod +x start.sh
 # Mac/Linux: chmod +x install.sh start.sh && ./install.sh && ./start.sh
 # Docker: docker-compose up -d
 ```
+
+---
+
+## 20. 项目文档层
+
+### 20.1 README.md
+
+```markdown
+# 三问高效学习机
+
+> AI驱动的个性化学习工具，通过"三问法"快速建立学科框架、挖掘核心争议、验证理解深度
+
+[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green.svg)](https://fastapi.tiangolo.com)
+[![React](https://img.shields.io/badge/React-18.2+-blue.svg)](https://reactjs.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://typescriptlang.org)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+## 📖 项目简介
+
+**三问高效学习机** 是一款以用户提问为核心触发机制的智能学习工具。通过"柔性课程生成 + 三问认知引擎"，帮助用户按需构建个性化学习路径，实现从问题提出到深度理解的认知闭环。
+
+### 核心价值
+
+- **按需学习**：课程内容由用户提问触发生成，杜绝信息过载
+- **认知加速**：通过"三问法"快速建立学科框架、挖掘核心争议、验证理解深度
+- **个性化适配**：AI补充 + 用户上传 = 专属复合知识库
+- **进度可控**：课程状态动态变化，界面简洁
+
+### 三问引擎
+
+| 三问 | 功能 | 技术 |
+|------|------|------|
+| 第一问 | 核心心智模型提取 | 知识图谱 (ECharts) |
+| 第二问 | 学术分歧挖掘 | NLI模型 + LLM |
+| 第三问 | 深度测评生成 | 布鲁姆六维度 |
+
+## 🚀 快速开始
+
+### 环境要求
+
+| 依赖 | 版本 | 下载地址 |
+|------|------|---------|
+| Python | 3.11+ | [python.org](https://python.org) |
+| Node.js | 18+ | [nodejs.org](https://nodejs.org) |
+| npm | 9+ | 随 Node.js 安装 |
+
+### 一键安装
+
+#### Windows
+```bash
+# 双击运行
+install.bat
+```
+
+#### Mac/Linux
+```bash
+chmod +x install.sh
+./install.sh
+```
+
+### 配置 API Key
+
+复制 `backend/.env.example` 为 `backend/.env`
+
+填入你的 MiniMax API Key：
+
+```env
+MINIMAX_API_KEY=your_api_key_here
+```
+
+### 启动程序
+
+#### Windows
+```bash
+# 双击运行
+start.bat
+```
+
+#### Mac/Linux
+```bash
+chmod +x start.sh
+./start.sh
+```
+
+### Docker 一键启动
+
+```bash
+docker-compose up -d
+```
+
+### 访问地址
+
+| 服务 | 地址 | 说明 |
+|------|------|------|
+| 前端 | http://localhost:5173 | 主应用界面 |
+| 后端 API | http://localhost:8000 | REST API |
+| API 文档 | http://localhost:8000/docs | Swagger UI |
+
+## 📁 项目结构
+
+```
+sanwen-learning/
+├── frontend/                 # React + TypeScript 前端
+│   ├── src/
+│   │   ├── pages/           # 页面组件
+│   │   ├── components/      # 复用组件
+│   │   ├── stores/          # Zustand 状态管理
+│   │   ├── api/             # API 调用
+│   │   └── hooks/           # 自定义 Hook
+│   ├── package.json
+│   └── vite.config.ts
+├── backend/                  # Python FastAPI 后端
+│   ├── routers/             # API 路由
+│   ├── services/            # 业务逻辑
+│   ├── models.py            # 数据模型
+│   ├── database.py          # 数据库
+│   └── requirements.txt
+├── data/                     # 数据存储
+│   ├── courses.db           # SQLite 数据库
+│   ├── chroma/              # 向量数据库
+│   └── uploads/             # 用户上传文件
+├── docker-compose.yml       # Docker 编排
+├── start.bat / start.sh     # 启动脚本
+├── install.bat / install.sh # 安装脚本
+└── README.md
+```
+
+## 🛠️ 技术栈
+
+### 前端
+
+| 技术 | 版本 | 用途 |
+|------|------|------|
+| React | 18.2+ | UI 框架 |
+| TypeScript | 5.0+ | 类型安全 |
+| Vite | 5.x | 构建工具 |
+| Zustand | 4.x | 状态管理 |
+| React Router | 6.x | 路由 |
+| ECharts | 5.x | 知识图谱/雷达图 |
+
+### 后端
+
+| 技术 | 版本 | 用途 |
+|------|------|------|
+| FastAPI | 0.104+ | Web 框架 |
+| SQLite | 3.x | 数据库 |
+| ChromaDB | 0.4+ | 向量数据库 |
+| MiniMax | API | LLM 服务 |
+| BAAI/bge-large-zh | 1.5 | 中文向量化 |
+
+## 📚 功能模块
+
+### 1. 柔性课程生成
+- 提问触发课程创建（<2秒）
+- 课程状态管理（活跃/完成/归档）
+- 三问进度自动追踪
+
+### 2. 复合知识库
+- AI 智能补充权威资料
+- 用户上传 PDF/Word/Markdown
+- 资料动态融合 + 语义检索
+
+### 3. 三问认知引擎
+- 第一问：知识图谱（Bloom 认知层级）
+- 第二问：争议挖掘（NLI 模型）
+- 第三问：深度测评（6 维度自测）
+
+### 4. 学习进度追踪
+- 课程进度可视化
+- 能力雷达图
+- 个性化提醒
+
+### 5. 用户交互
+- 课程卡片管理（拖拽排序/长按菜单）
+- 讨论区（AI 总结）
+- 数据导出（JSON/Markdown/PDF）
+
+## 🎨 设计规范
+
+**iOS 风格设计**
+- 左右边距：145px
+- 卡片圆角：16px
+- 系统字体：SF Pro
+- 暗黑模式：手动切换
+
+**配色方案**
+
+| 用途 | 亮色模式 | 暗黑模式 |
+|------|---------|---------|
+| 主背景 | #FFFFFF | #000000 |
+| 二级背景 | #F2F2F7 | #1C1C1E |
+| 强调色 | #007AFF | #0A84FF |
+
+## 🔧 开发指南
+
+### 本地开发
+
+```bash
+# 安装依赖
+npm run install:all
+
+# 启动开发服务器
+npm run dev
+
+# 或分别启动
+cd backend && python main.py
+cd frontend && npm run dev
+```
+
+### 构建生产版本
+
+```bash
+cd frontend
+npm run build
+```
+
+### 代码格式化
+
+```bash
+# 前端
+cd frontend && npm run lint
+
+# 后端
+cd backend && black .
+```
+
+## 📊 API 文档
+
+启动后端后访问：http://localhost:8000/docs
+
+### 主要端点
+
+| 模块 | 端点 | 方法 | 说明 |
+|------|------|------|------|
+| 课程 | /api/courses/create | POST | 创建课程 |
+| 课程 | /api/courses/list | GET | 课程列表 |
+| 知识库 | /api/knowledge/upload | POST | 上传资料 |
+| 知识库 | /api/knowledge/search | POST | 语义检索 |
+| 三问 | /api/three-ask/graph/generate/{id} | POST | 生成知识图谱 |
+| 三问 | /api/three-ask/quiz/generate/{id} | POST | 生成测评 |
+| SSE | /api/sse/stream/{id} | GET | 实时推送 |
+
+## 🤝 贡献指南
+
+1. Fork 本仓库
+2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
+3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
+4. 推送到分支 (`git push origin feature/AmazingFeature`)
+5. 开启 Pull Request
+
+## 📄 许可证
+
+本项目采用 MIT 许可证 - 详见 LICENSE 文件
+
+## 📧 联系方式
+
+- 项目 Issues: [GitHub Issues](https://github.com/anson1220/ThreeQuestionsLearning/issues)
+- 邮箱: support@sanwen.com
+
+## 🙏 致谢
+
+- [MiniMax](https://www.minimaxi.com/) - 提供 LLM API
+- [BAAI](https://www.baai.ac.cn/) - 提供中文向量化模型
+- [ChromaDB](https://www.trychroma.com/) - 向量数据库
+- [ECharts](https://echarts.apache.org/) - 数据可视化
+
+⭐ 如果这个项目对你有帮助，请给一个 Star！
+```
+
+### 20.2 API.md
+
+```markdown
+# API 接口文档
+
+## 概述
+
+- **基础 URL**: `http://localhost:8000/api`
+- **响应格式**: JSON
+- **字符编码**: UTF-8
+
+## 通用响应格式
+
+### 成功响应
+
+```json
+{
+  "success": true,
+  "data": {...},
+  "message": "操作成功"
+}
+```
+
+### 错误响应
+
+```json
+{
+  "error": "错误类型",
+  "detail": "详细错误信息"
+}
+```
+
+## 一、课程管理 API
+
+### 1.1 创建课程
+
+**POST** `/courses/create`
+
+**请求体**
+
+```json
+{
+  "question": "如何快速掌握JavaScript编程开发？"
+}
+```
+
+**响应**
+
+```json
+{
+  "id": "uuid",
+  "title": "JavaScript精通之路",
+  "keywords": ["JavaScript", "前端", "编程"],
+  "originalQuestion": "如何快速掌握JavaScript编程开发？",
+  "status": "active",
+  "progress": 0,
+  "threeAskProgress": {
+    "question1": false,
+    "question2": false,
+    "question3": false
+  },
+  "createdAt": 1704067200000
+}
+```
+
+### 1.2 获取课程列表
+
+**GET** `/courses/list`
+
+**查询参数**
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| status | string | - | 课程状态筛选 |
+| limit | int | 50 | 每页数量 |
+| offset | int | 0 | 偏移量 |
+
+**响应**
+
+```json
+{
+  "courses": [...],
+  "total": 10
+}
+```
+
+### 1.3 获取单个课程
+
+**GET** `/courses/{course_id}`
+
+响应：同创建课程响应
+
+### 1.4 更新课程状态
+
+**PATCH** `/courses/{course_id}/status`
+
+**请求体**
+
+```json
+{
+  "status": "archived"
+}
+```
+
+### 1.5 删除课程
+
+**DELETE** `/courses/{course_id}`
+
+## 二、知识库 API
+
+### 2.1 上传资料
+
+**POST** `/knowledge/upload`
+
+请求格式: `multipart/form-data`
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| course_id | string | 课程ID |
+| file | file | 文件（PDF/Word/Markdown/TXT）|
+
+**响应**
+
+```json
+{
+  "success": true,
+  "doc_id": "uuid"
+}
+```
+
+### 2.2 AI 智能补充
+
+**POST** `/knowledge/ai-fetch/{course_id}`
+
+**响应**
+
+```json
+{
+  "success": true,
+  "message": "AI 资料补充已启动"
+}
+```
+
+### 2.3 获取资料列表
+
+**GET** `/knowledge/documents`
+
+**查询参数**
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| course_id | string | 课程ID |
+| source | string | user/ai（可选）|
+
+### 2.4 语义检索
+
+**POST** `/knowledge/search`
+
+**请求体**
+
+```json
+{
+  "course_id": "uuid",
+  "query": "闭包的概念",
+  "top_k": 5
+}
+```
+
+**响应**
+
+```json
+{
+  "results": [
+    {
+      "content": "闭包是指函数能够记住并访问它的词法作用域...",
+      "score": 0.89,
+      "metadata": {"source": "user", "title": "JavaScript高级编程"}
+    }
+  ]
+}
+```
+
+## 三、三问引擎 API
+
+### 3.1 生成知识图谱（第一问）
+
+**POST** `/three-ask/graph/generate/{course_id}`
+
+**响应**
+
+```json
+{
+  "nodes": [
+    {
+      "id": "node1",
+      "name": "闭包",
+      "description": "函数与其词法环境的组合",
+      "bloom_level": "understand",
+      "difficulty": 0.6,
+      "is_threshold_concept": true,
+      "x": 100,
+      "y": 200
+    }
+  ],
+  "links": [
+    {
+      "source": "node1",
+      "target": "node2",
+      "relation": "prerequisite",
+      "strength": 0.8
+    }
+  ]
+}
+```
+
+### 3.2 检测争议点（第二问）
+
+**POST** `/three-ask/controversy/detect/{course_id}`
+
+**响应**
+
+```json
+{
+  "status": "processing",
+  "message": "争议分析已开始"
+}
+```
+
+### 3.3 获取争议点列表
+
+**GET** `/three-ask/controversy/{course_id}`
+
+**响应**
+
+```json
+{
+  "controversies": [
+    {
+      "id": "c1",
+      "topic": "闭包是否会导致内存泄漏？",
+      "pro_view": "会，闭包会持有外部变量引用",
+      "pro_evidence": "MDN文档说明...",
+      "con_view": "不会，现代JS引擎有优化",
+      "con_evidence": "V8引擎优化机制...",
+      "confidence": 0.85
+    }
+  ]
+}
+```
+
+### 3.4 生成测评题目（第三问）
+
+**POST** `/three-ask/quiz/generate/{course_id}`
+
+**响应**
+
+```json
+{
+  "quizzes": [
+    {
+      "id": "quiz_remember_1",
+      "dimension": "记忆",
+      "bloom_level": "remember",
+      "difficulty": 0.2,
+      "question_type": "single",
+      "question": "闭包的定义是什么？",
+      "options": ["A. 函数与环境的组合", "B. 函数内部函数", "C. 全局变量", "D. 匿名函数"],
+      "correct_answer": "A",
+      "explanation": "闭包是指函数能够记住并访问它的词法作用域",
+      "knowledge_points": ["闭包", "作用域"]
+    }
+  ],
+  "total": 12
+}
+```
+
+### 3.5 提交答案
+
+**POST** `/three-ask/quiz/submit`
+
+**请求体**
+
+```json
+{
+  "course_id": "uuid",
+  "question_id": "quiz_remember_1",
+  "user_answer": "A",
+  "time_spent": 15
+}
+```
+
+**响应**
+
+```json
+{
+  "is_correct": true,
+  "score": 100,
+  "explanation": "闭包是指函数与其词法环境的组合",
+  "feedback": "回答正确！"
+}
+```
+
+### 3.6 完成测评
+
+**POST** `/three-ask/quiz/{course_id}/complete`
+
+**响应**
+
+```json
+{
+  "success": true,
+  "message": "测评完成",
+  "accuracy": 75.0
+}
+```
+
+### 3.7 获取三问进度
+
+**GET** `/three-ask/progress/{course_id}`
+
+**响应**
+
+```json
+{
+  "question1": true,
+  "question2": false,
+  "question3": false,
+  "overallProgress": 33
+}
+```
+
+## 四、SSE 实时推送
+
+### 4.1 建立 SSE 连接
+
+**GET** `/sse/stream/{course_id}`
+
+### 事件类型
+
+| 事件名 | 触发时机 | 数据格式 |
+|--------|---------|---------|
+| graph_updated | 知识图谱更新 | {nodes, links} |
+| controversy_ready | 争议分析完成 | {controversies[]} |
+| quiz_ready | 测评生成完成 | {quizzes[]} |
+| progress | 进度更新 | {progress} |
+| notification | 系统通知 | {message, type} |
+
+### 客户端示例
+
+```javascript
+const es = new EventSource('/api/sse/stream/course_123');
+
+es.addEventListener('graph_updated', (e) => {
+  const data = JSON.parse(e.data);
+  updateKnowledgeGraph(data);
+});
+
+es.addEventListener('controversy_ready', (e) => {
+  const data = JSON.parse(e.data);
+  showControversies(data.controversies);
+});
+```
+
+## 五、状态码说明
+
+| 状态码 | 说明 |
+|--------|------|
+| 200 | 成功 |
+| 201 | 创建成功 |
+| 400 | 请求参数错误 |
+| 401 | 未授权 |
+| 404 | 资源不存在 |
+| 413 | 文件过大 |
+| 500 | 服务器内部错误 |
+
+## 六、错误码
+
+| 错误码 | 说明 |
+|--------|------|
+| INVALID_FILE_TYPE | 不支持的文件类型 |
+| FILE_TOO_LARGE | 文件过大 |
+| COURSE_NOT_FOUND | 课程不存在 |
+| DOCUMENT_NOT_FOUND | 资料不存在 |
+| AI_SERVICE_ERROR | AI 服务异常 |
+| VECTOR_SEARCH_ERROR | 向量检索失败 |
+```
+
+### 20.3 DEPLOY.md
+
+```markdown
+# 部署指南
+
+## 一、部署方式选择
+
+| 方式 | 适用场景 | 复杂度 | 推荐 |
+|------|---------|--------|------|
+| 本地一键启动 | 个人使用、开发测试 | ⭐ | ✅ |
+| Docker 部署 | 生产环境、团队使用 | ⭐⭐ | ✅ |
+| 云服务器部署 | 公网访问 | ⭐⭐⭐ | ⚠️ |
+
+---
+
+## 二、本地一键启动（推荐）
+
+### Windows 用户
+
+1. 安装 Python 3.11+ 和 Node.js 18+
+2. 双击 `install.bat` 安装依赖
+3. 配置 `backend/.env` 中的 API Key
+4. 双击 `start.bat` 启动程序
+
+### Mac/Linux 用户
+
+```bash
+# 1. 添加执行权限
+chmod +x install.sh start.sh
+
+# 2. 安装依赖
+./install.sh
+
+# 3. 配置 API Key
+cp backend/.env.example backend/.env
+# 编辑 backend/.env，填入 MINIMAX_API_KEY
+
+# 4. 启动程序
+./start.sh
+```
+
+---
+
+## 三、Docker 部署
+
+### 前置要求
+
+- Docker 20.10+
+- Docker Compose 2.0+
+
+### 部署步骤
+
+```bash
+# 1. 克隆项目
+git clone https://github.com/yourname/sanwen-learning.git
+cd sanwen-learning
+
+# 2. 配置环境变量
+cp backend/.env.example backend/.env
+# 编辑 backend/.env 填入 API Key
+
+# 3. 启动所有服务
+docker-compose up -d
+
+# 4. 查看日志
+docker-compose logs -f
+
+# 5. 停止服务
+docker-compose down
+```
+
+### 服务端口
+
+| 服务 | 端口 | 外部访问 |
+|------|------|---------|
+| 前端 | 5173 | http://localhost:5173 |
+| 后端 API | 8000 | http://localhost:8000 |
+| ChromaDB | 8001 | http://localhost:8001 |
+
+---
+
+## 四、云服务器部署
+
+### 4.1 服务器要求
+
+| 配置 | 最低要求 | 推荐配置 |
+|------|---------|---------|
+| CPU | 2核 | 4核 |
+| 内存 | 4GB | 8GB |
+| 磁盘 | 20GB | 50GB |
+| 系统 | Ubuntu 20.04+ | Ubuntu 22.04 |
+
+### 4.2 安装 Docker
+
+```bash
+# Ubuntu/Debian
+curl -fsSL https://get.docker.com | bash
+sudo systemctl enable docker
+sudo systemctl start docker
+
+# 安装 Docker Compose
+sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+sudo chmod +x /usr/local/bin/docker-compose
+```
+
+### 4.3 部署项目
+
+```bash
+# 1. 克隆项目
+git clone https://github.com/yourname/sanwen-learning.git
+cd sanwen-learning
+
+# 2. 配置环境变量
+cp backend/.env.example backend/.env
+vim backend/.env  # 填入 API Key
+
+# 3. 使用 Docker Compose 启动
+docker-compose up -d
+
+# 4. 配置 Nginx 反向代理（可选）
+```
+
+### 4.4 Nginx 配置
+
+```nginx
+server {
+    listen 80;
+    server_name your-domain.com;
+    
+    # 前端
+    location / {
+        proxy_pass http://localhost:5173;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+    
+    # 后端 API
+    location /api {
+        proxy_pass http://localhost:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+    
+    # WebSocket (SSE)
+    location /api/sse {
+        proxy_pass http://localhost:8000;
+        proxy_set_header Host $host;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_set_header X-Accel-Buffering no;
+    }
+}
+```
+
+---
+
+## 五、环境变量配置
+
+### 后端环境变量 (backend/.env)
+
+| 变量 | 说明 | 必填 | 默认值 |
+|------|------|------|--------|
+| MINIMAX_API_KEY | MiniMax API 密钥 | ✅ | - |
+| MINIMAX_API_HOST | API 地址 | ❌ | https://api.minimaxi.com |
+| DATA_DIR | 数据目录 | ❌ | ./data |
+| BACKEND_PORT | 后端端口 | ❌ | 8000 |
+| FRONTEND_URL | 前端地址 | ❌ | http://localhost:5173 |
+
+### 前端环境变量 (frontend/.env)
+
+| 变量 | 说明 | 必填 | 默认值 |
+|------|------|------|--------|
+| VITE_API_URL | API 地址 | ❌ | http://localhost:8000/api |
+| VITE_APP_NAME | 应用名称 | ❌ | 三问高效学习机 |
+
+---
+
+## 六、数据备份
+
+### 备份数据库
+
+```bash
+# SQLite 数据库
+cp data/courses.db data/backups/courses_$(date +%Y%m%d).db
+
+# 向量数据库
+cp -r data/chroma data/backups/chroma_$(date +%Y%m%d)
+
+# 用户上传文件
+cp -r data/uploads data/backups/uploads_$(date +%Y%m%d)
+```
+
+### 定时备份 (crontab)
+
+```bash
+# 每天凌晨 2 点备份
+0 2 * * * /path/to/backup.sh
+```
+
+---
+
+## 七、故障排查
+
+### 7.1 后端启动失败
+
+```bash
+# 检查端口占用
+lsof -i :8000
+# 或
+netstat -an | grep 8000
+
+# 检查 Python 依赖
+pip list | grep fastapi
+
+# 查看详细日志
+python main.py --debug
+```
+
+### 7.2 前端连接不上后端
+
+```bash
+# 检查后端是否运行
+curl http://localhost:8000/api/health
+
+# 检查 CORS 配置
+# 确保 backend/main.py 中 allow_origins 包含前端地址
+```
+
+### 7.3 ChromaDB 连接失败
+
+```bash
+# 检查 ChromaDB 服务
+docker ps | grep chromadb
+
+# 重启 ChromaDB
+docker-compose restart chromadb
+```
+
+### 7.4 AI API 调用失败
+
+```bash
+# 检查 API Key 配置
+cat backend/.env | grep MINIMAX_API_KEY
+
+# 测试 API 连接
+curl -X POST https://api.minimaxi.com/v1/test \
+  -H "Authorization: Bearer $MINIMAX_API_KEY"
+```
+
+---
+
+## 八、性能优化建议
+
+### 8.1 后端优化
+
+```python
+# 启用 uvicorn 多进程
+uvicorn main:app --workers 4 --host 0.0.0.0 --port 8000
+
+# 添加数据库索引
+CREATE INDEX idx_courses_status ON courses(status);
+```
+
+### 8.2 前端优化
+
+```bash
+# 生产环境构建
+npm run build
+
+# 使用 CDN 加速静态资源
+# 配置 vite.config.ts 中的 base 路径
+```
+
+### 8.3 向量检索优化
+
+```python
+# 调整 ChromaDB 索引参数
+collection = client.create_collection(
+    name="course_xxx",
+    metadata={"hnsw:space": "cosine", "hnsw:M": 32, "hnsw:ef_construction": 200}
+)
+```
+
+---
+
+## 九、安全建议
+
+- **API Key 管理**：不要将 .env 文件提交到版本控制
+- **文件上传限制**：已限制文件类型和大小
+- **CORS 配置**：生产环境只允许可信域名
+- **数据加密**：敏感数据使用加密存储
+- **定期更新**：及时更新依赖包版本
+
+---
+
+## 十、联系方式
+
+- 技术问题：提交 [GitHub Issue](https://github.com/anson1220/ThreeQuestionsLearning/issues)
+- 商务合作：business@sanwen.com
+```
+
+### 20.4 项目文档汇总
+
+| 文件 | 用途 |
+|------|------|
+| README.md | 项目简介、功能说明、快速开始指南 |
+| API.md | 完整API接口文档（REST + SSE） |
+| DEPLOY.md | 部署指南、故障排查、性能优化 |
+
+### 20.5 验证方法
+
+```bash
+# 访问 http://localhost:5173 检查前端运行
+# 访问 http://localhost:8000/docs 检查API文档
+# 查看 README.md 确认项目结构完整
+```
+
+---
+
+## 📋 归档完成清单
+
+| 批次 | 分组 | 文件数 | Section | 状态 |
+|------|------|--------|---------|------|
+| 第1批 | 后端基础层 | 5 | 13 | ✅ |
+| 第2批 | 后端路由层 | 5 | 14 | ✅ |
+| 第3批 | 数据库表结构 | 2 | 15 | ✅ |
+| 第4批 | 后端服务层 | 7 | 16 | ✅ |
+| 第5批 | 前端API层 | 5 | 17 | ✅ |
+| 第6批 | 前端业务组件 | 3 | 18 | ✅ |
+| 第7批 | 配置文件 | 10 | 19 | ✅ |
+| 第8批 | 项目文档 | 3 | 20 | ✅ |
+| **总计** | | **40** | - | ✅ |
+
+### 项目启动验证
+
+```bash
+# 1. 安装依赖
+./install.sh  # Mac/Linux
+# 或双击 install.bat  # Windows
+
+# 2. 配置 API Key
+cp backend/.env.example backend/.env
+# 编辑 backend/.env 填入 MINIMAX_API_KEY
+
+# 3. 启动程序
+./start.sh  # Mac/Linux
+# 或双击 start.bat  # Windows
+
+# 4. 访问应用
+# 前端: http://localhost:5173
+# 后端: http://localhost:8000
+# API文档: http://localhost:8000/docs
+```
