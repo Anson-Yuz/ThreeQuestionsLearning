@@ -16,21 +16,23 @@ const Profile = () => {
       {/* 状态栏占位 */}
       <div className="h-11 bg-white dark:bg-gray-900" />
 
-      {/* 头部 */}
-      <div className="bg-white dark:bg-gray-900 px-4 py-6">
-        <div className="flex items-center gap-4">
-          <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
-            <PersonIcon className="w-8 h-8 text-white" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-gray-900 dark:text-white">学习者</h1>
-            <p className="text-sm text-gray-500">学习中 4 个课程</p>
+      {/* 头部 - 与内容区域边距一致 */}
+      <div className="bg-white dark:bg-gray-900">
+        <div className="page-container py-6">
+          <div className="flex items-center gap-4">
+            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
+              <PersonIcon className="w-8 h-8 text-white" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-gray-900 dark:text-white">学习者</h1>
+              <p className="text-sm text-gray-500">学习中 4 个课程</p>
+            </div>
           </div>
         </div>
       </div>
 
       {/* 学习数据 */}
-      <div className="px-4 py-4">
+      <div className="mt-4">
         <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm">
           <h2 className="text-base font-semibold text-gray-900 dark:text-white mb-3">学习数据</h2>
           <div className="grid grid-cols-2 gap-4">
@@ -48,7 +50,7 @@ const Profile = () => {
       </div>
 
       {/* 周学习趋势 */}
-      <div className="px-4 py-4">
+      <div className="mt-4">
         <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm">
           <h2 className="text-base font-semibold text-gray-900 dark:text-white mb-3">周学习趋势</h2>
           <div className="flex items-end justify-between h-24 gap-1">
@@ -74,7 +76,7 @@ const Profile = () => {
       </div>
 
       {/* 功能列表 */}
-      <div className="px-4 py-4">
+      <div className="mt-4">
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
           <MenuItem icon={<ArchiveIcon className="w-5 h-5" />} title="课程归档" />
           <div className="border-t border-gray-100 dark:border-gray-700" />
@@ -87,7 +89,7 @@ const Profile = () => {
       </div>
 
       {/* 能力对比 */}
-      <div className="px-4 py-4">
+      <div className="mt-4">
         <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm">
           <h2 className="text-base font-semibold text-gray-900 dark:text-white mb-3">能力对比</h2>
           <div className="space-y-3">

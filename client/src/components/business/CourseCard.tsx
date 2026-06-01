@@ -84,20 +84,6 @@ export const CourseCard = memo(({
             ))}
           </div>
 
-          {/* 进度条 */}
-          <div className="mt-3">
-            <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
-              <span>学习进度</span>
-              <span>{progress}%</span>
-            </div>
-            <div className="h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all duration-500"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-          </div>
-
           {/* 底部信息 */}
           <div className="flex items-center justify-between mt-3 text-xs text-gray-400">
             <span>{relativeTime}</span>

@@ -53,7 +53,7 @@ const LearningSpace = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-black flex flex-col">
+    <div className="min-h-screen bg-gray-50 dark:bg-black flex flex-col page-container">
       <NavBar
         title="JavaScript精通之路"
         showBack

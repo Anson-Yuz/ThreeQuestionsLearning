@@ -18,6 +18,13 @@ body {
   background-color: #000;
 }
 
+/* 页面容器 - 左右留白145pt */
+.page-container {
+  padding-left: 145pt;
+  padding-right: 145pt;
+  margin: 0 auto;
+}
+
 /* 滚动条隐藏 */
 .scrollbar-hide::-webkit-scrollbar {
   display: none;

@@ -83,7 +83,7 @@ const QuizCenter = () => {
 
   if (submitted && results) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-black flex flex-col">
+      <div className="min-h-screen bg-gray-50 dark:bg-black flex flex-col page-container">
         <NavBar title="测评结果" showBack onLeftClick={handleBack} />
 
         <div className="flex-1 overflow-y-auto p-4">
@@ -127,7 +127,7 @@ const QuizCenter = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-black flex flex-col">
+    <div className="min-h-screen bg-gray-50 dark:bg-black flex flex-col page-container">
       <NavBar
         title="测评中心"
         showBack

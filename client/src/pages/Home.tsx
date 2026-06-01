@@ -1,6 +1,6 @@
 import { memo, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { SearchIcon, PlusIcon } from '../components/ui/Icons'
+import { SearchIcon, PlusIcon, UploadIcon } from '../components/ui/Icons'
 import CourseCard from '../components/business/CourseCard'
 import ActionSheet from '../components/ui/ActionSheet'
 
@@ -72,41 +72,43 @@ const Home = () => {
       {/* 状态栏占位 */}
       <div className="h-11 bg-white dark:bg-gray-900" />
 
-      {/* 标题栏 */}
-      <div className="bg-white dark:bg-gray-900 px-4 py-4">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">你好，继续学习</h1>
-            <p className="text-sm text-gray-500 mt-1">已掌握 4 个课程</p>
-          </div>
-          <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
-            <span className="text-lg">👤</span>
-          </div>
-        </div>
-
-        {/* 搜索区域 */}
-        <div className="relative">
-          <div className="absolute left-3 top-1/2 -translate-y-1/2">
-            <SearchIcon className="w-5 h-5 text-gray-400" />
-          </div>
-          <input
-            type="text"
-            value={searchValue}
-            onChange={(e) => setSearchValue(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-            placeholder="输入你想学的问题..."
-            className="w-full pl-10 pr-4 py-3 bg-gray-100 dark:bg-gray-800 rounded-2xl text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          {isCreating && (
-            <div className="absolute right-3 top-1/2 -translate-y-1/2">
-              <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+      {/* 标题栏 - 与内容区域边距一致 */}
+      <div className="bg-white dark:bg-gray-900">
+        <div className="page-container py-4">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">你好，继续学习</h1>
+              <p className="text-sm text-gray-500 mt-1">已掌握 4 个课程</p>
             </div>
-          )}
+            <button className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center">
+              <UploadIcon className="w-5 h-5 text-white" />
+            </button>
+          </div>
+
+          {/* 搜索区域 */}
+          <div className="relative">
+            <div className="absolute left-3 top-1/2 -translate-y-1/2">
+              <SearchIcon className="w-5 h-5 text-gray-400" />
+            </div>
+            <input
+              type="text"
+              value={searchValue}
+              onChange={(e) => setSearchValue(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+              placeholder="输入你想学的问题..."
+              className="w-full pl-10 pr-4 py-3 bg-gray-100 dark:bg-gray-800 rounded-2xl text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            {isCreating && (
+              <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       {/* 课程列表 */}
-      <div className="px-4 py-4 space-y-4">
+      <div className="page-container pt-4 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold text-gray-900 dark:text-white">我的课程</h2>
           <button className="text-sm text-blue-500">查看全部</button>
@@ -145,8 +147,6 @@ const Home = () => {
           </button>
         </div>
       </div>
-
-      {/* 长按菜单 */}
       {showMenu && selectedCourse && (
         <ActionSheet
           visible={showMenu}
