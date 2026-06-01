@@ -12169,3 +12169,874 @@ cp backend/.env.example backend/.env
 # 后端: http://localhost:8000
 # API文档: http://localhost:8000/docs
 ```
+
+---
+
+## 21. 修复补丁
+
+> 以下修复针对 OpenSpec 归档过程中发现的问题
+
+### 21.1 修复1：import 路径错误
+
+**问题描述：** 部分组件的 import 路径错误，多了一层 `components/` 路径
+
+**修复文件：**
+
+#### src/components/business/QuizEntrance.tsx
+
+```typescript
+// ❌ 错误写法
+import { CheckCircleIcon, ClockIcon } from '../components/ui/Icons'
+
+// ✅ 正确写法
+import { CheckCircleIcon, ClockIcon } from '../ui/Icons'
+```
+
+#### src/components/business/CourseCard.tsx
+
+```typescript
+// ❌ 错误写法
+import { BookIcon, ChevronRightIcon } from '../components/ui/Icons'
+
+// ✅ 正确写法
+import { BookIcon, ChevronRightIcon } from '../ui/Icons'
+```
+
+#### src/components/business/ControversyPanel.tsx
+
+```typescript
+// ❌ 错误写法
+import { ChevronDownIcon, ChevronUpIcon, MessageIcon } from '../components/ui/Icons'
+
+// ✅ 正确写法
+import { ChevronDownIcon, ChevronUpIcon, MessageIcon } from '../ui/Icons'
+```
+
+#### src/layouts/TabBarLayout.tsx
+
+```typescript
+// ❌ 错误写法
+import { HomeIcon, PersonIcon } from '../components/ui/Icons'
+
+// ✅ 正确写法
+import { HomeIcon, PersonIcon } from '../ui/Icons'
+```
+
+#### src/components/business/QuizPlayer.tsx
+
+```typescript
+// ❌ 错误写法
+import { CheckIcon, XIcon, BookOpenIcon } from '../components/ui/Icons'
+
+// ✅ 正确写法
+import { CheckIcon, XIcon, BookOpenIcon } from '../ui/Icons'
+```
+
+### 21.2 修复2：补充缺失的图标组件
+
+**文件：** `src/components/ui/Icons.tsx` - 完整版
+
+```typescript
+import React from 'react';
+
+// ============================================
+// 导航图标
+// ============================================
+
+export const HomeIcon = ({ className = "w-6 h-6" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path d="M3 9.5L12 3L21 9.5V19C21 19.5304 20.7893 20.0391 20.4142 20.4142C20.0391 20.7893 19.5304 21 19 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V9.5Z" />
+    <path d="M9 21V12H15V21" />
+  </svg>
+);
+
+export const BrainIcon = ({ className = "w-6 h-6" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path d="M12 4.5c1.5 0 3 .5 4 1.5l.5.5c1 1 1.5 2.5 1.5 4v1c0 2-1 4-3 5.5l-1 1c-.5.5-1 1-1.5 1.5l-.5.5c-1 1-2.5 1.5-4 1.5s-3-.5-4-1.5l-.5-.5c-.5-.5-1-1-1.5-1.5l-1-1C5 16 4 14 4 12v-1c0-1.5.5-3 1.5-4l.5-.5c1-1 2.5-1.5 4-1.5z"/>
+    <path d="M12 4.5v15"/>
+    <path d="M9 7c0 1.5.5 3 1.5 4"/>
+    <path d="M15 7c0 1.5-.5 3-1.5 4"/>
+    <path d="M9 12c0 2 1 4 3 5"/>
+    <path d="M15 12c0 2-1 4-3 5"/>
+  </svg>
+);
+
+export const ClipboardIcon = ({ className = "w-6 h-6" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+    <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
+  </svg>
+);
+
+export const PersonIcon = ({ className = "w-6 h-6" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+    <circle cx="12" cy="7" r="4" />
+  </svg>
+);
+
+// ============================================
+// 操作图标
+// ============================================
+
+export const SearchIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <circle cx="11" cy="11" r="8" />
+    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+  </svg>
+);
+
+export const UploadIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path d="M12 3v12m0 0-3-3m3 3 3-3" />
+    <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+  </svg>
+);
+
+export const BookIcon = ({ className = "w-6 h-6" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+  </svg>
+);
+
+export const ChevronRightIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M9 18l6-6-6-6" />
+  </svg>
+);
+
+export const ChevronLeftIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M15 18l-6-6 6-6" />
+  </svg>
+);
+
+export const ChevronDownIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M6 9l6 6 6-6" />
+  </svg>
+);
+
+export const ChevronUpIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M18 15l-6-6-6 6" />
+  </svg>
+);
+
+// ============================================
+// 反馈图标
+// ============================================
+
+export const CheckIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M20 6L9 17l-5-5" />
+  </svg>
+);
+
+export const XIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <line x1="18" y1="6" x2="6" y2="18" />
+    <line x1="6" y1="6" x2="18" y2="18" />
+  </svg>
+);
+
+export const CheckCircleIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+    <path d="M22 4L12 14.01l-3-3" />
+  </svg>
+);
+
+export const ClockIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <circle cx="12" cy="12" r="10" />
+    <path d="M12 6v6l4 2" />
+  </svg>
+);
+
+export const MessageIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+  </svg>
+);
+
+export const BookOpenIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+    <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+  </svg>
+);
+
+export const LightbulbIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path d="M9 18h6" />
+    <path d="M10 22h4" />
+    <path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14" />
+  </svg>
+);
+
+export const FlagIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+    <line x1="4" y1="22" x2="4" y2="15" />
+  </svg>
+);
+
+export const RotateCcwIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path d="M1 4v6h6" />
+    <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+  </svg>
+);
+
+export const PlayIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+    <path d="M8 5v14l11-7z" />
+  </svg>
+);
+
+export const SparklesIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z" />
+    <path d="M5 19l1 3 1-3 3-1-3-1-1-3-1 3-3 1 3 1z" />
+    <path d="M19 13l1 2 1-2 2-1-2-1-1-2-1 2-2 1 2 1z" />
+  </svg>
+);
+
+export const ArchiveIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <rect x="3" y="10" width="18" height="12" rx="2" />
+    <path d="M6 10V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v4" />
+    <line x1="12" y1="14" x2="12" y2="18" />
+    <line x1="9" y1="16" x2="15" y2="16" />
+  </svg>
+);
+
+export const DownloadIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <polyline points="7 10 12 15 17 10" />
+    <line x1="12" y1="15" x2="12" y2="3" />
+  </svg>
+);
+
+export const GearIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <circle cx="12" cy="12" r="3" />
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+  </svg>
+);
+```
+
+### 21.3 修复3：补充缺失的路由端点
+
+#### backend/routers/courses.py - 补充导出端点
+
+```python
+# 在文件末尾添加
+
+@router.get("/export/{course_id}")
+async def export_course(course_id: str, format: str = "json"):
+    """导出课程数据（JSON/Markdown/PDF）"""
+    from services.export_service import get_export_service
+    from database import get_db
+    
+    export_service = get_export_service()
+    
+    with get_db() as conn:
+        # 获取课程数据
+        course = conn.execute("SELECT * FROM courses WHERE id = ?", (course_id,)).fetchone()
+        if not course:
+            raise HTTPException(404, "课程不存在")
+        
+        documents = conn.execute(
+            "SELECT * FROM documents WHERE course_id = ?",
+            (course_id,)
+        ).fetchall()
+        
+        progress = conn.execute(
+            "SELECT * FROM learning_progress WHERE course_id = ?",
+            (course_id,)
+        ).fetchone()
+        
+        controversies = conn.execute(
+            "SELECT * FROM controversies WHERE course_id = ?",
+            (course_id,)
+        ).fetchall()
+    
+    course_data = {
+        "course": dict(course),
+        "documents": [dict(d) for d in documents],
+        "progress": dict(progress) if progress else None,
+        "controversies": [dict(c) for c in controversies]
+    }
+    
+    if format == "json":
+        result = export_service.export_course_json(course_data)
+    elif format == "markdown":
+        result = export_service.export_course_markdown(course_data)
+    else:
+        raise HTTPException(400, f"不支持的格式: {format}")
+    
+    return result
+```
+
+#### backend/routers/knowledge.py - 补充进度端点
+
+```python
+# 在文件末尾添加
+
+@router.get("/ai-progress/{course_id}")
+async def get_ai_progress(course_id: str):
+    """获取 AI 资料补充进度（SSE）"""
+    from routers.sse import push_event
+    
+    # 模拟进度推送
+    import asyncio
+    
+    async def progress_generator():
+        for i in range(0, 101, 20):
+            push_event(course_id, "progress", {"type": "ai_fetch", "progress": i})
+            await asyncio.sleep(0.5)
+    
+    # 在后台执行
+    asyncio.create_task(progress_generator())
+    
+    return {"status": "started", "message": "进度推送已启动"}
+```
+
+### 21.4 修复4：补充 ChromaDB 连接初始化
+
+#### backend/main.py - 添加上电初始化
+
+```python
+# 在 main.py 中添加 startup 事件
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
+# 初始化数据库
+from database import init_db
+init_db()
+
+# 创建 FastAPI 应用
+app = FastAPI(
+    title="三问高效学习机 API",
+    description="AI驱动的个性化学习工具后端",
+    version="1.0.0"
+)
+
+# CORS 配置
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:3000",
+        os.getenv("FRONTEND_URL", "http://localhost:5173")
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ============================================
+# 启动和关闭事件
+# ============================================
+
+@app.on_event("startup")
+async def startup_event():
+    """应用启动时初始化服务"""
+    print("🚀 正在启动三问高效学习机后端...")
+    
+    # 初始化 ChromaDB
+    try:
+        from services.chroma_client import get_chroma_client
+        client = get_chroma_client()
+        print("✅ ChromaDB 连接成功")
+    except Exception as e:
+        print(f"⚠️ ChromaDB 连接失败: {e}")
+    
+    # 初始化 Embedding 模型（可选，预加载）
+    try:
+        from services.embedding_service import get_embedding_service
+        embedder = get_embedding_service()
+        print("✅ Embedding 服务已就绪")
+    except Exception as e:
+        print(f"⚠️ Embedding 服务初始化失败: {e}")
+    
+    print("✅ 后端服务启动完成")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """应用关闭时清理资源"""
+    print("🛑 正在关闭三问高效学习机后端...")
+
+
+# ============================================
+# 导入路由
+# ============================================
+
+from routers import courses, knowledge, three_ask, quiz, sse
+
+app.include_router(courses.router, prefix="/api/courses", tags=["课程管理"])
+app.include_router(knowledge.router, prefix="/api/knowledge", tags=["知识库"])
+app.include_router(three_ask.router, prefix="/api/three-ask", tags=["三问引擎"])
+app.include_router(quiz.router, prefix="/api/quiz", tags=["测评中心"])
+app.include_router(sse.router, prefix="/api/sse", tags=["实时推送"])
+
+# ============================================
+# 健康检查
+# ============================================
+
+@app.get("/api/health", tags=["系统"])
+async def health_check():
+    return {"status": "ok", "message": "三问高效学习机后端运行中"}
+
+@app.get("/", tags=["系统"])
+async def root():
+    return {
+        "name": "三问高效学习机 API",
+        "version": "1.0.0",
+        "docs": "/docs"
+    }
+
+
+# ============================================
+# 启动入口
+# ============================================
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("BACKEND_PORT", 8000))
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=port,
+        reload=True
+    )
+```
+
+### 21.5 修复5：补充 ChromaDB 客户端实现
+
+#### backend/services/chroma_client.py - 完整实现
+
+```python
+import os
+import json
+from pathlib import Path
+from typing import List, Dict, Optional, Any
+from dotenv import load_dotenv
+
+load_dotenv()
+
+class ChromaClient:
+    """ChromaDB 向量数据库客户端"""
+    
+    def __init__(self):
+        self.client = None
+        self.persist_dir = os.getenv("CHROMA_DIR", "./data/chroma")
+        self._connect()
+    
+    def _connect(self):
+        """连接 ChromaDB"""
+        try:
+            import chromadb
+            from chromadb.config import Settings
+            
+            # 确保目录存在
+            Path(self.persist_dir).mkdir(parents=True, exist_ok=True)
+            
+            self.client = chromadb.PersistentClient(
+                path=self.persist_dir,
+                settings=Settings(anonymized_telemetry=False)
+            )
+            print(f"✅ ChromaDB 连接成功: {self.persist_dir}")
+        except ImportError:
+            print("⚠️ chromadb 未安装，请运行: pip install chromadb")
+            self.client = None
+        except Exception as e:
+            print(f"⚠️ ChromaDB 连接失败: {e}")
+            self.client = None
+    
+    def get_collection(self, course_id: str) -> Optional[Any]:
+        """获取或创建课程的知识库集合"""
+        if self.client is None:
+            return None
+        
+        # 集合名称规范化
+        collection_name = f"course_{course_id}".replace("-", "_")
+        
+        try:
+            collection = self.client.get_collection(collection_name)
+        except Exception:
+            collection = self.client.create_collection(
+                name=collection_name,
+                metadata={"hnsw:space": "cosine"}
+            )
+        
+        return collection
+    
+    def add_documents(
+        self,
+        course_id: str,
+        ids: List[str],
+        documents: List[str],
+        metadatas: Optional[List[Dict]] = None,
+        embeddings: Optional[List[List[float]]] = None
+    ) -> bool:
+        """添加文档到向量库"""
+        collection = self.get_collection(course_id)
+        if collection is None:
+            return False
+        
+        try:
+            collection.add(
+                ids=ids,
+                documents=documents,
+                metadatas=metadatas or [{}] * len(ids),
+                embeddings=embeddings
+            )
+            return True
+        except Exception as e:
+            print(f"添加文档失败: {e}")
+            return False
+    
+    def search(
+        self,
+        course_id: str,
+        query: str,
+        query_embedding: Optional[List[float]] = None,
+        top_k: int = 5
+    ) -> List[Dict]:
+        """语义检索"""
+        collection = self.get_collection(course_id)
+        if collection is None:
+            return []
+        
+        try:
+            if query_embedding:
+                results = collection.query(
+                    query_embeddings=[query_embedding],
+                    n_results=top_k
+                )
+            else:
+                results = collection.query(
+                    query_texts=[query],
+                    n_results=top_k
+                )
+            
+            # 格式化结果
+            formatted = []
+            if results and results.get("documents"):
+                for i in range(len(results["documents"][0])):
+                    formatted.append({
+                        "content": results["documents"][0][i],
+                        "score": 1 - results["distances"][0][i] if results.get("distances") else 0.5,
+                        "metadata": results["metadatas"][0][i] if results.get("metadatas") else {}
+                    })
+            
+            return formatted
+        except Exception as e:
+            print(f"搜索失败: {e}")
+            return []
+    
+    def delete_collection(self, course_id: str) -> bool:
+        """删除课程的知识库集合"""
+        if self.client is None:
+            return False
+        
+        collection_name = f"course_{course_id}".replace("-", "_")
+        
+        try:
+            self.client.delete_collection(collection_name)
+            return True
+        except Exception:
+            return False
+    
+    def delete_document(self, course_id: str, doc_id: str) -> bool:
+        """删除单个文档"""
+        collection = self.get_collection(course_id)
+        if collection is None:
+            return False
+        
+        try:
+            collection.delete(ids=[doc_id])
+            return True
+        except Exception:
+            return False
+
+
+# 单例实例
+_chroma_client = None
+
+def get_chroma_client() -> ChromaClient:
+    global _chroma_client
+    if _chroma_client is None:
+        _chroma_client = ChromaClient()
+    return _chroma_client
+```
+
+### 21.6 修复6：补充 Embedding 服务
+
+#### backend/services/embedding_service.py - 完整实现
+
+```python
+import os
+import numpy as np
+from typing import List, Union
+from dotenv import load_dotenv
+
+load_dotenv()
+
+class EmbeddingService:
+    """向量化服务 - 使用 BAAI/bge-large-zh 模型"""
+    
+    def __init__(self):
+        self.model = None
+        self.model_name = os.getenv("EMBEDDING_MODEL", "BAAI/bge-large-zh-v1.5")
+        self.dimension = int(os.getenv("EMBEDDING_DIMENSION", 1024))
+        self._load_model()
+    
+    def _load_model(self):
+        """加载向量化模型（懒加载）"""
+        try:
+            from sentence_transformers import SentenceTransformer
+            print(f"正在加载向量化模型: {self.model_name}")
+            self.model = SentenceTransformer(self.model_name)
+            print(f"✅ 向量化模型加载完成，维度: {self.dimension}")
+        except ImportError:
+            print("⚠️ sentence-transformers 未安装，请运行: pip install sentence-transformers")
+            self.model = None
+        except Exception as e:
+            print(f"⚠️ 向量化模型加载失败: {e}")
+            print("   将使用模拟向量")
+            self.model = None
+    
+    def encode(self, texts: Union[str, List[str]]) -> List[List[float]]:
+        """将文本转换为向量"""
+        
+        if isinstance(texts, str):
+            texts = [texts]
+        
+        # 如果模型未加载，返回模拟向量
+        if self.model is None:
+            return self._mock_encode(texts)
+        
+        try:
+            embeddings = self.model.encode(texts, normalize_embeddings=True)
+            return embeddings.tolist()
+        except Exception as e:
+            print(f"向量化失败: {e}")
+            return self._mock_encode(texts)
+    
+    def _mock_encode(self, texts: List[str]) -> List[List[float]]:
+        """生成模拟向量（开发测试用）"""
+        np.random.seed(42)
+        return [np.random.randn(self.dimension).tolist() for _ in texts]
+    
+    def similarity(self, vec1: List[float], vec2: List[float]) -> float:
+        """计算两个向量的余弦相似度"""
+        v1 = np.array(vec1)
+        v2 = np.array(vec2)
+        return float(np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-8))
+    
+    async def search_similar(
+        self,
+        query: str,
+        documents: List[dict],
+        top_k: int = 5
+    ) -> List[dict]:
+        """在文档列表中搜索相似内容"""
+        
+        if not documents:
+            return []
+        
+        # 向量化查询
+        query_vec = self.encode(query)[0]
+        
+        # 计算相似度
+        results = []
+        for doc in documents:
+            if "embedding" in doc:
+                similarity = self.similarity(query_vec, doc["embedding"])
+            else:
+                similarity = 0.5  # 无向量的文档给默认分数
+            
+            results.append({
+                **doc,
+                "score": similarity
+            })
+        
+        # 排序并返回 top_k
+        results.sort(key=lambda x: x["score"], reverse=True)
+        return results[:top_k]
+
+
+# 单例实例
+_embedding_service = None
+
+def get_embedding_service() -> EmbeddingService:
+    global _embedding_service
+    if _embedding_service is None:
+        _embedding_service = EmbeddingService()
+    return _embedding_service
+```
+
+### 21.7 修复7：补充 PDF 解析服务
+
+#### backend/services/parser_service.py - 完整实现
+
+```python
+import os
+import re
+from pathlib import Path
+from typing import Optional, List
+
+class ParserService:
+    """文件解析服务 - 支持 PDF/Word/Markdown/TXT"""
+    
+    def __init__(self):
+        self.max_chunk_size = 500
+        self.chunk_overlap = 50
+    
+    async def parse_file(self, file_path: str, file_type: str) -> str:
+        """解析文件，提取纯文本"""
+        
+        file_ext = Path(file_path).suffix.lower()
+        
+        if file_type == "application/pdf" or file_ext == ".pdf":
+            return await self._parse_pdf(file_path)
+        elif file_type in ["application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"] or file_ext in [".doc", ".docx"]:
+            return await self._parse_word(file_path)
+        elif file_type in ["text/markdown", "text/plain"] or file_ext in [".md", ".txt"]:
+            return await self._parse_text(file_path)
+        else:
+            return f"不支持的文件类型: {file_type}"
+    
+    async def _parse_pdf(self, file_path: str) -> str:
+        """解析 PDF 文件"""
+        try:
+            from pypdf import PdfReader
+            
+            reader = PdfReader(file_path)
+            text = ""
+            for page in reader.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + "\n"
+            
+            return text.strip() if text else f"[PDF 文件: {Path(file_path).name}，无法提取文本内容]"
+        except ImportError:
+            return f"[PDF 文件: {Path(file_path).name}，请安装 pypdf 库]"
+        except Exception as e:
+            return f"[PDF 解析失败: {e}]"
+    
+    async def _parse_word(self, file_path: str) -> str:
+        """解析 Word 文件"""
+        try:
+            from docx import Document
+            
+            doc = Document(file_path)
+            text = "\n".join([para.text for para in doc.paragraphs if para.text.strip()])
+            
+            return text.strip() if text else f"[Word 文件: {Path(file_path).name}，无文本内容]"
+        except ImportError:
+            return f"[Word 文件: {Path(file_path).name}，请安装 python-docx 库]"
+        except Exception as e:
+            return f"[Word 解析失败: {e}]"
+    
+    async def _parse_text(self, file_path: str) -> str:
+        """解析文本/Markdown 文件"""
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            
+            # 如果是 Markdown，移除部分格式标记
+            if file_path.endswith(".md"):
+                content = self._clean_markdown(content)
+            
+            return content.strip()
+        except UnicodeDecodeError:
+            # 尝试其他编码
+            with open(file_path, "r", encoding="gbk") as f:
+                return f.read().strip()
+        except Exception as e:
+            return f"[文本解析失败: {e}]"
+    
+    def _clean_markdown(self, content: str) -> str:
+        """清理 Markdown 格式标记"""
+        # 移除图片
+        content = re.sub(r'!\[.*?\]\(.*?\)', '', content)
+        # 移除链接（保留文字）
+        content = re.sub(r'\[(.*?)\]\(.*?\)', r'\1', content)
+        # 移除代码块标记
+        content = re.sub(r'```.*?```', '', content, flags=re.DOTALL)
+        # 移除行内代码标记
+        content = re.sub(r'`(.*?)`', r'\1', content)
+        # 移除粗体/斜体标记
+        content = re.sub(r'\*\*(.*?)\*\*', r'\1', content)
+        content = re.sub(r'\*(.*?)\*', r'\1', content)
+        # 移除标题标记
+        content = re.sub(r'^#+\s+', '', content, flags=re.MULTILINE)
+        
+        return content
+    
+    def chunk_text(self, text: str) -> List[str]:
+        """将长文本分块"""
+        if len(text) <= self.max_chunk_size:
+            return [text]
+        
+        chunks = []
+        start = 0
+        
+        while start < len(text):
+            end = start + self.max_chunk_size
+            
+            # 尝试在段落边界分割
+            if end < len(text):
+                # 寻找最近的段落结束
+                last_period = text.rfind('。', start, end)
+                last_newline = text.rfind('\n', start, end)
+                split_pos = max(last_period, last_newline)
+                
+                if split_pos > start:
+                    end = split_pos + 1
+            
+            chunk = text[start:end].strip()
+            if chunk:
+                chunks.append(chunk)
+            
+            start = end - self.chunk_overlap if end < len(text) else end
+        
+        return chunks
+
+
+# 单例实例
+_parser_service = None
+
+def get_parser_service() -> ParserService:
+    global _parser_service
+    if _parser_service is None:
+        _parser_service = ParserService()
+    return _parser_service
+```
+
+### 21.8 修复汇总
+
+| 修复项 | 文件 | 操作 |
+|--------|------|------|
+| 修复1 | 多个组件文件 | 更正 import 路径 |
+| 修复2 | src/components/ui/Icons.tsx | 补充缺失图标 |
+| 修复3 | backend/routers/courses.py | 添加导出端点 |
+| 修复3 | backend/routers/knowledge.py | 添加进度端点 |
+| 修复4 | backend/main.py | 添加上电初始化 |
+| 修复5 | backend/services/chroma_client.py | 完整实现 |
+| 修复6 | backend/services/embedding_service.py | 完整实现 |
+| 修复7 | backend/services/parser_service.py | 完整实现 |
