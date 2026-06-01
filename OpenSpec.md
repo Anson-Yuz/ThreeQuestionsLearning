@@ -5254,3 +5254,4227 @@ client/
 | 分割线 | `var(--separator)` |
 | 主按钮 | `var(--accent)` |
 | 卡片阴影 | `var(--card-shadow)` |
+
+---
+
+## 十二、测评中心模块（Quiz Center）
+
+### 12.1 整体架构
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      测评中心模块                            │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
+│  │  测评列表   │→ │  答题界面   │→ │  结果反馈   │         │
+│  │ (认知层级)  │  │  (单题模式) │  │  (报告)     │         │
+│  └─────────────┘  └─────────────┘  └─────────────┘         │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 12.2 数据结构设计
+
+#### 12.2.1 题目数据结构
+
+```typescript
+// 认知层级枚举
+enum BloomLevel {
+  REMEMBER = 'remember',      // 记忆
+  UNDERSTAND = 'understand',  // 理解
+  APPLY = 'apply',            // 应用
+  ANALYZE = 'analyze',        // 分析
+  EVALUATE = 'evaluate',      // 评价
+  CREATE = 'create'           // 创造
+}
+
+// 难度等级
+enum Difficulty {
+  EASY = 1,
+  MEDIUM = 2,
+  HARD = 3
+}
+
+// 题目类型
+enum QuestionType {
+  SINGLE_CHOICE = 'single',   // 单选题
+  MULTIPLE_CHOICE = 'multiple', // 多选题
+  TRUE_FALSE = 'truefalse',   // 判断题
+  TEXT = 'text',              // 简答题
+  CODE = 'code'               // 编程题
+}
+
+// 题目接口
+interface Question {
+  id: string;
+  courseId: string;
+  bloomLevel: BloomLevel;
+  type: QuestionType;
+  difficulty: Difficulty;
+  content: string;
+  options?: string[];
+  correctAnswer: string | string[];
+  explanation: string;
+  知识点: string[];
+  userAnswer?: string | string[];
+  isCorrect?: boolean;
+  isMarked?: boolean;
+  timeSpent?: number;
+}
+```
+
+#### 12.2.2 测评报告数据结构
+
+```typescript
+interface QuizReport {
+  courseId: string;
+  courseTitle: string;
+  completedAt: number;
+
+  // 总体统计
+  totalQuestions: number;
+  answeredCount: number;
+  correctCount: number;
+  accuracy: number;
+
+  // 能力维度得分
+  abilityScores: {
+    [BloomLevel.REMEMBER]: number;
+    [BloomLevel.UNDERSTAND]: number;
+    [BloomLevel.APPLY]: number;
+    [BloomLevel.ANALYZE]: number;
+    [BloomLevel.EVALUATE]: number;
+    [BloomLevel.CREATE]: number;
+  };
+
+  // 错题集
+  mistakes: Array<{
+    question: Question;
+    userAnswer: string;
+    correctAnswer: string;
+    explanation: string;
+  }>;
+
+  // 复习建议
+  suggestions: {
+    weakAreas: string[];
+    recommendedQuestions: string[];
+    studyTips: string;
+  };
+
+  // 答题时间
+  totalTime: number;
+  averageTime: number;
+}
+```
+
+### 12.3 后端API设计
+
+#### 12.3.1 API端点
+
+| 方法 | 路径 | 功能 |
+|------|------|------|
+| GET | /api/quiz/{courseId}/list | 获取测评题目列表（按认知层级分组）|
+| GET | /api/quiz/{courseId}/questions | 获取所有题目（答题用）|
+| POST | /api/quiz/submit | 提交单题答案 |
+| POST | /api/quiz/{courseId}/complete | 完成测评，生成报告 |
+| GET | /api/quiz/{courseId}/report | 获取测评报告 |
+| POST | /api/quiz/mark | 标记/取消标记题目 |
+
+#### 12.3.2 后端核心逻辑
+
+**QuizService 核心方法：**
+
+| 方法 | 功能 |
+|------|------|
+| `generate_questions(course_id, documents)` | 基于学习资料生成题目（6个认知层级各2题）|
+| `evaluate_answer(question, user_answer)` | 评估用户答案 |
+| `generate_report(course_id, answers)` | 生成测评报告 |
+| `_generate_suggestions(weak_areas, scores)` | 生成学习建议 |
+
+#### 12.3.3 QuizService 完整实现
+
+```python
+import json
+import asyncio
+from typing import List, Dict
+from services.llm_service import LLMService
+
+# Bloom难度系数
+DIFFICULTIES = {
+    'remember': 0.2,
+    'understand': 0.4,
+    'apply': 0.6,
+    'analyze': 0.75,
+    'evaluate': 0.85,
+    'create': 0.95
+}
+
+# 各维度题型配置
+QUESTION_TYPES = {
+    'remember': ['multiple_choice', 'fill_blank'],
+    'understand': ['short_answer', 'explanation'],
+    'apply': ['coding', 'calculation'],
+    'analyze': ['case_study', 'analysis'],
+    'evaluate': ['essay', 'discussion'],
+    'create': ['project_design', 'innovation']
+}
+
+class QuizService:
+    """测评服务"""
+    
+    def __init__(self):
+        self.llm = LLMService()
+    
+    async def generate_full_quiz(self, course_id: str, documents: List[Dict]) -> Dict:
+        """为课程生成完整测评（6个维度各2题）"""
+        
+        # 1. 合并课程资料
+        combined_text = "\n\n".join([doc.get('content', '')[:2000] for doc in documents[:5]])
+        
+        # 2. 为每个Bloom维度生成题目（每个维度2题）
+        quizzes = []
+        
+        for dimension, difficulty in DIFFICULTIES.items():
+            for i in range(2):  # 每个维度2题
+                question = await self._generate_question(
+                    dimension, difficulty, combined_text, question_num=i+1
+                )
+                if question:
+                    quizzes.append(question)
+        
+        return {
+            'course_id': course_id,
+            'questions': quizzes,
+            'total_count': len(quizzes),
+            'created_at': asyncio.get_event_loop().time()
+        }
+    
+    async def _generate_question(
+        self, 
+        dimension: str, 
+        difficulty: float, 
+        context: str,
+        question_num: int = 1
+    ) -> Dict:
+        """为指定维度生成一道题目"""
+        
+        prompt = f"""
+基于以下学习资料，为"{dimension}"认知层级生成第{question_num}道测评题目。
+
+要求：
+- 难度系数: {difficulty} (0.2最简单，0.95最难)
+- 题型: {QUESTION_TYPES[dimension]}
+- 考察{dimension}级别能力
+
+学习资料：
+{context[:4000]}
+
+输出JSON格式：
+{{
+  "id": "question_{dimension}_{question_num}",
+  "dimension": "{dimension}",
+  "bloom_level": "{dimension}",
+  "difficulty": {difficulty},
+  "question_type": "{QUESTION_TYPES[dimension][0]}",
+  "question": "题目内容",
+  "options": ["A. 选项1", "B. 选项2", "C. 选项3", "D. 选项4"],
+  "correct_answer": "A",
+  "explanation": "答案解析",
+  "common_mistakes": ["常见错误1", "常见错误2"],
+  "related_concepts": ["相关概念1", "相关概念2"],
+  "知识点": ["知识点1", "知识点2"]
+}}
+"""
+        
+        try:
+            result = await self.llm.chat(prompt)
+            question = json.loads(result)
+            return question
+        except Exception:
+            return None
+    
+    async def evaluate_answer(
+        self, 
+        question: Dict, 
+        user_answer: str
+    ) -> Dict:
+        """评测用户答案"""
+        
+        if question.get('question_type') in ['multiple_choice', 'fill_blank']:
+            # 客观题自动判分
+            is_correct = user_answer.strip().upper() == question['correct_answer'].strip().upper()
+            return {
+                'is_correct': is_correct,
+                'score': 100 if is_correct else 0,
+                'feedback': '回答正确' if is_correct else f"正确答案: {question['correct_answer']}"
+            }
+        else:
+            # 主观题LLM评分
+            result = await self._llm_evaluate_subjective(question, user_answer)
+            return result
+    
+    async def _llm_evaluate_subjective(
+        self, 
+        question: Dict, 
+        user_answer: str
+    ) -> Dict:
+        """LLM评分主观题"""
+        
+        prompt = f"""
+你是一位学习评估专家。请评估以下回答。
+
+题目：{question['question']}
+正确答案：{question.get('correct_answer', '无标准答案')}
+用户回答：{user_answer}
+
+评估标准：
+- 准确性（是否正确）
+- 完整性（是否全面）
+- 深度（是否有独到见解）
+
+请输出JSON：
+{{
+  "score": 85,
+  "is_correct": true,
+  "feedback": "评估反馈",
+  "suggestions": ["改进建议1", "改进建议2"]
+}}
+"""
+        
+        try:
+            result = await self.llm.chat(prompt)
+            evaluation = json.loads(result)
+            return evaluation
+        except Exception:
+            return {
+                'is_correct': False,
+                'score': 0,
+                'feedback': '评分失败，请稍后重试'
+            }
+    
+    async def generate_report(
+        self, 
+        course_id: str, 
+        quiz_results: List[Dict]
+    ) -> Dict:
+        """生成测评报告"""
+        
+        # 统计正确率
+        total = len(quiz_results)
+        correct = sum(1 for r in quiz_results if r.get('is_correct'))
+        
+        # 各维度正确率
+        dimension_accuracy = {}
+        for result in quiz_results:
+            dim = result.get('dimension', 'remember')
+            if dim not in dimension_accuracy:
+                dimension_accuracy[dim] = {'correct': 0, 'total': 0}
+            dimension_accuracy[dim]['total'] += 1
+            if result.get('is_correct'):
+                dimension_accuracy[dim]['correct'] += 1
+        
+        # 计算能力维度得分
+        ability_scores = {}
+        for dim, data in dimension_accuracy.items():
+            accuracy = data['correct'] / data['total'] if data['total'] > 0 else 0
+            ability_scores[dim] = round(accuracy * 100, 1)
+        
+        # 找出薄弱环节
+        weak_areas = [
+            dim for dim, data in dimension_accuracy.items()
+            if data['total'] > 0 and data['correct'] / data['total'] < 0.6
+        ]
+        
+        return {
+            'course_id': course_id,
+            'totalQuestions': total,
+            'answeredCount': total,
+            'correctCount': correct,
+            'accuracy': round(correct / total * 100, 1) if total > 0 else 0,
+            'abilityScores': ability_scores,
+            'suggestions': {
+                'weakAreas': weak_areas,
+                'recommendedQuestions': [],  # 可根据薄弱环节推荐相关题目
+                'studyTips': '建议加强薄弱维度的学习，多做相关练习'
+            }
+        }
+```
+
+### 12.4 前端实现
+
+#### 12.4.1 测评Store (quizStore)
+
+```typescript
+import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
+
+// 认知层级枚举
+enum BloomLevel {
+  REMEMBER = 'remember',
+  UNDERSTAND = 'understand',
+  APPLY = 'apply',
+  ANALYZE = 'analyze',
+  EVALUATE = 'evaluate',
+  CREATE = 'create'
+}
+
+// 难度等级
+enum Difficulty {
+  EASY = 1,
+  MEDIUM = 2,
+  HARD = 3
+}
+
+// 题目类型
+enum QuestionType {
+  SINGLE_CHOICE = 'single',
+  MULTIPLE_CHOICE = 'multiple',
+  TRUE_FALSE = 'truefalse',
+  TEXT = 'text',
+  CODE = 'code'
+}
+
+interface Question {
+  id: string;
+  courseId: string;
+  bloomLevel: BloomLevel;
+  type: QuestionType;
+  difficulty: Difficulty;
+  content: string;
+  options?: string[];
+  correctAnswer: string | string[];
+  explanation: string;
+  知识点: string[];
+  userAnswer?: string | string[];
+  isCorrect?: boolean;
+  isMarked?: boolean;
+  timeSpent?: number;
+}
+
+interface QuizReport {
+  courseId: string;
+  courseTitle: string;
+  completedAt: number;
+  totalQuestions: number;
+  answeredCount: number;
+  correctCount: number;
+  accuracy: number;
+  abilityScores: Record<BloomLevel, number>;
+  mistakes: Array<{
+    question: Question;
+    userAnswer: string;
+    correctAnswer: string;
+    explanation: string;
+  }>;
+  suggestions: {
+    weakAreas: string[];
+    recommendedQuestions: string[];
+    studyTips: string;
+  };
+  totalTime: number;
+  averageTime: number;
+}
+
+interface QuizStore {
+  questions: Question[];
+  currentQuestions: Question[];
+  currentIndex: number;
+  report: QuizReport | null;
+  loading: boolean;
+  quizStarted: boolean;
+  quizCompleted: boolean;
+  timeSpent: number;
+
+  fetchQuestions: (courseId: string) => Promise<void>;
+  startQuiz: (courseId: string, level?: string) => void;
+  submitAnswer: (answer: string, timeSpent: number) => Promise<void>;
+  markQuestion: (questionId: string) => void;
+  nextQuestion: () => void;
+  prevQuestion: () => void;
+  completeQuiz: () => Promise<void>;
+  fetchReport: (courseId: string) => Promise<void>;
+  resetQuiz: () => void;
+}
+
+export const useQuizStore = create<QuizStore>()(
+  persist(
+    (set, get) => ({
+      questions: [],
+      currentQuestions: [],
+      currentIndex: 0,
+      report: null,
+      loading: false,
+      quizStarted: false,
+      quizCompleted: false,
+      timeSpent: 0,
+
+      fetchQuestions: async (courseId: string) => {
+        set({ loading: true });
+        try {
+          const response = await fetch(`/api/quiz/${courseId}/questions`);
+          const data = await response.json();
+          set({ questions: data.questions, loading: false });
+        } catch (error) {
+          console.error('Failed to fetch questions:', error);
+          set({ loading: false });
+        }
+      },
+
+      startQuiz: (courseId: string, level?: string) => {
+        const { questions } = get();
+        let filtered = questions;
+        if (level) {
+          filtered = questions.filter(q => q.bloomLevel === level);
+        }
+        set({
+          currentQuestions: filtered,
+          currentIndex: 0,
+          quizStarted: true,
+          quizCompleted: false,
+          timeSpent: 0
+        });
+      },
+
+      submitAnswer: async (answer: string, timeSpent: number) => {
+        const { currentQuestions, currentIndex, timeSpent: totalTime } = get();
+        const question = currentQuestions[currentIndex];
+        
+        // 评估答案
+        const isCorrect = answer.toUpperCase() === question.correctAnswer.toUpperCase();
+        
+        // 更新当前题目的用户答案
+        const updatedQuestions = [...currentQuestions];
+        updatedQuestions[currentIndex] = {
+          ...question,
+          userAnswer: answer,
+          isCorrect,
+          timeSpent
+        };
+        
+        set({
+          currentQuestions: updatedQuestions,
+          timeSpent: totalTime + timeSpent
+        });
+      },
+
+      markQuestion: (questionId: string) => {
+        const { currentQuestions, currentIndex } = get();
+        const updatedQuestions = [...currentQuestions];
+        const question = updatedQuestions.find(q => q.id === questionId);
+        if (question) {
+          question.isMarked = !question.isMarked;
+        }
+        set({ currentQuestions: updatedQuestions });
+      },
+
+      nextQuestion: () => {
+        const { currentIndex, currentQuestions } = get();
+        if (currentIndex < currentQuestions.length - 1) {
+          set({ currentIndex: currentIndex + 1 });
+        }
+      },
+
+      prevQuestion: () => {
+        const { currentIndex } = get();
+        if (currentIndex > 0) {
+          set({ currentIndex: currentIndex - 1 });
+        }
+      },
+
+      completeQuiz: async () => {
+        const { currentQuestions, timeSpent } = get();
+        set({ quizCompleted: true });
+        
+        // 计算报告
+        const correctCount = currentQuestions.filter(q => q.isCorrect).length;
+        const totalQuestions = currentQuestions.length;
+        const accuracy = Math.round(correctCount / totalQuestions * 100);
+        
+        // 计算各维度得分
+        const abilityScores: Record<BloomLevel, number> = {
+          [BloomLevel.REMEMBER]: 0,
+          [BloomLevel.UNDERSTAND]: 0,
+          [BloomLevel.APPLY]: 0,
+          [BloomLevel.ANALYZE]: 0,
+          [BloomLevel.EVALUATE]: 0,
+          [BloomLevel.CREATE]: 0
+        };
+        
+        const dimensionCounts: Record<string, number> = {};
+        const dimensionCorrect: Record<string, number> = {};
+        
+        currentQuestions.forEach(q => {
+          const dim = q.bloomLevel;
+          dimensionCounts[dim] = (dimensionCounts[dim] || 0) + 1;
+          if (q.isCorrect) {
+            dimensionCorrect[dim] = (dimensionCorrect[dim] || 0) + 1;
+          }
+        });
+        
+        Object.keys(dimensionCounts).forEach(dim => {
+          abilityScores[dim as BloomLevel] = Math.round(
+            (dimensionCorrect[dim] || 0) / dimensionCounts[dim] * 100
+          );
+        });
+        
+        // 收集错题
+        const mistakes = currentQuestions
+          .filter(q => !q.isCorrect)
+          .map(q => ({
+            question: q,
+            userAnswer: q.userAnswer || '',
+            correctAnswer: q.correctAnswer as string,
+            explanation: q.explanation
+          }));
+        
+        // 找出薄弱环节
+        const weakAreas = Object.entries(abilityScores)
+          .filter(([_, score]) => score < 60)
+          .map(([level, _]) => level);
+        
+        const report: QuizReport = {
+          courseId: '',
+          courseTitle: '',
+          completedAt: Date.now(),
+          totalQuestions,
+          answeredCount: totalQuestions,
+          correctCount,
+          accuracy,
+          abilityScores,
+          mistakes,
+          suggestions: {
+            weakAreas,
+            recommendedQuestions: [],
+            studyTips: weakAreas.length > 0 
+              ? `建议加强 ${weakAreas.join('、')} 维度的学习`
+              : '整体表现良好，继续保持'
+          },
+          totalTime,
+          averageTime: Math.round(timeSpent / totalQuestions)
+        };
+        
+        set({ report });
+      },
+
+      fetchReport: async (courseId: string) => {
+        try {
+          const response = await fetch(`/api/quiz/${courseId}/report`);
+          const data = await response.json();
+          set({ report: data });
+        } catch (error) {
+          console.error('Failed to fetch report:', error);
+        }
+      },
+
+      resetQuiz: () => {
+        set({
+          questions: [],
+          currentQuestions: [],
+          currentIndex: 0,
+          report: null,
+          quizStarted: false,
+          quizCompleted: false,
+          timeSpent: 0
+        });
+      }
+    }),
+    { name: 'quiz-storage' }
+  )
+);
+```
+
+#### 12.4.2 认知层级配置
+
+| 层级 | 名称 | 颜色 | 图标 |
+|------|------|------|------|
+| remember | 记忆 | #8B5CF6 | BrainIcon |
+| understand | 理解 | #3B82F6 | BookOpenIcon |
+| apply | 应用 | #10B981 | LightningIcon |
+| analyze | 分析 | #F59E0B | MagnifyingGlassIcon |
+| evaluate | 评价 | #EF4444 | StarIcon |
+| create | 创造 | #EC4899 | SparklesIcon |
+
+#### 12.4.3 测评列表页面 (QuizCenter)
+
+```tsx
+import React, { memo, useEffect, useState } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import { useQuizStore } from '../stores/quizStore'
+import { useCourseStore } from '../stores/courseStore'
+
+// SVG图标组件
+const BrainIcon = ({ className = "w-6 h-6" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path d="M12 4.5c1.5 0 3 .5 4 1.5l.5.5c1 1 1.5 2.5 1.5 4v1c0 2-1 4-3 5.5l-1 1c-.5.5-1 1-1.5 1.5l-.5.5c-1 1-2.5 1.5-4 1.5s-3-.5-4-1.5l-.5-.5c-.5-.5-1-1-1.5-1.5l-1-1C5 16 4 14 4 12v-1c0-1.5.5-3 1.5-4l.5-.5c1-1 2.5-1.5 4-1.5z"/>
+    <path d="M12 4.5v15"/>
+    <path d="M9 7c0 1.5.5 3 1.5 4"/>
+    <path d="M15 7c0 1.5-.5 3-1.5 4"/>
+    <path d="M9 12c0 2 1 4 3 5"/>
+    <path d="M15 12c0 2-1 4-3 5"/>
+  </svg>
+)
+
+const BookOpenIcon = ({ className = "w-6 h-6" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+    <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+  </svg>
+)
+
+const LightningIcon = ({ className = "w-6 h-6" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+  </svg>
+)
+
+const MagnifyingGlassIcon = ({ className = "w-6 h-6" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <circle cx="11" cy="11" r="8"/>
+    <path d="M21 21l-4.35-4.35"/>
+  </svg>
+)
+
+const StarIcon = ({ className = "w-6 h-6" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+  </svg>
+)
+
+const SparklesIcon = ({ className = "w-6 h-6" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z"/>
+    <path d="M5 19l1 3 1-3 3-1-3-1-1-3-1 3-3 1 3 1z"/>
+    <path d="M19 13l1 2 1-2 2-1-2-1-1-2-1 2-2 1 2 1z"/>
+  </svg>
+)
+
+const ChevronRightIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M9 18l6-6-6-6"/>
+  </svg>
+)
+
+const PlayIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+    <path d="M8 5v14l11-7z"/>
+  </svg>
+)
+
+const CheckIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M20 6L9 17l-5-5"/>
+  </svg>
+)
+
+const ClockIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <circle cx="12" cy="12" r="10"/>
+    <path d="M12 6v6l4 2"/>
+  </svg>
+)
+
+// 认知层级配置
+const BLOOM_LEVELS = [
+  { key: 'remember', name: '记忆', color: '#8B5CF6', bgColor: 'bg-purple-500', icon: BrainIcon },
+  { key: 'understand', name: '理解', color: '#3B82F6', bgColor: 'bg-blue-500', icon: BookOpenIcon },
+  { key: 'apply', name: '应用', color: '#10B981', bgColor: 'bg-green-500', icon: LightningIcon },
+  { key: 'analyze', name: '分析', color: '#F59E0B', bgColor: 'bg-orange-500', icon: MagnifyingGlassIcon },
+  { key: 'evaluate', name: '评价', color: '#EF4444', bgColor: 'bg-red-500', icon: StarIcon },
+  { key: 'create', name: '创造', color: '#EC4899', bgColor: 'bg-pink-500', icon: SparklesIcon },
+]
+
+// 难度标签
+const DIFFICULTY_LABELS = ['入门', '简单', '中等', '困难', '挑战']
+const DIFFICULTY_COLORS = ['text-green-500', 'text-emerald-500', 'text-yellow-500', 'text-orange-500', 'text-red-500']
+
+const QuizCenter = () => {
+  const { courseId } = useParams<{ courseId: string }>()
+  const navigate = useNavigate()
+  const { questions, loading, fetchQuestions } = useQuizStore()
+  const { currentCourse } = useCourseStore()
+  
+  const [selectedLevel, setSelectedLevel] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (courseId) {
+      fetchQuestions(courseId)
+    }
+  }, [courseId, fetchQuestions])
+
+  // 按认知层级分组题目
+  const questionsByLevel = questions.reduce((acc, q) => {
+    const level = q.bloomLevel
+    if (!acc[level]) acc[level] = []
+    acc[level].push(q)
+    return acc
+  }, {} as Record<string, Question[]>)
+
+  // 计算每个层级的完成数和正确率
+  const levelStats = Object.entries(questionsByLevel).map(([level, qs]) => {
+    const answered = qs.filter(q => q.userAnswer !== undefined).length
+    const correct = qs.filter(q => q.isCorrect).length
+    const total = qs.length
+    return {
+      level,
+      total,
+      answered,
+      correct,
+      accuracy: total > 0 ? Math.round(correct / total * 100) : 0
+    }
+  })
+
+  const handleStartQuiz = (level?: string) => {
+    if (level) {
+      setSelectedLevel(level)
+    }
+    navigate(`/quiz/${courseId}/play`)
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-3 border-gray-200 border-t-blue-500 rounded-full animate-spin mx-auto mb-3" />
+          <p className="text-gray-500">加载中...</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen pb-20">
+      {/* 页面标题 */}
+      <div className="page-container pt-4">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-1">测评中心</h1>
+        <p className="text-sm text-gray-500">{currentCourse?.title || '课程测评'}</p>
+      </div>
+
+      {/* 能力雷达图预览 */}
+      <div className="page-container mt-4">
+        <div className="card p-4">
+          <h2 className="text-sm font-medium text-gray-500 mb-3">能力雷达图</h2>
+          <div className="flex items-center justify-between">
+            <div className="flex-1">
+              <RadarPreview scores={levelStats} />
+            </div>
+            <div className="text-right">
+              <div className="text-3xl font-bold text-blue-500">
+                {levelStats.length > 0 
+                  ? Math.round(levelStats.reduce((sum, s) => sum + s.accuracy, 0) / levelStats.length)
+                  : 0}%
+              </div>
+              <div className="text-xs text-gray-500">综合正确率</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 认知层级网格 */}
+      <div className="page-container mt-4">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">认知层级测评</h2>
+        <div className="bloom-grid space-y-3">
+          {BLOOM_LEVELS.map((level) => {
+            const stats = levelStats.find(s => s.level === level.key) || { total: 0, answered: 0, correct: 0, accuracy: 0 }
+            const isCompleted = stats.answered === stats.total && stats.total > 0
+            const Icon = level.icon
+            
+            return (
+              <div
+                key={level.key}
+                className="bloom-card bg-gray-50 dark:bg-gray-800 rounded-2xl p-4 border-t-4 cursor-pointer transition-all active:scale-98"
+                style={{ borderTopColor: level.color }}
+                onClick={() => handleStartQuiz(level.key)}
+              >
+                <div className="flex items-center gap-3">
+                  <div 
+                    className="w-12 h-12 rounded-xl flex items-center justify-center"
+                    style={{ backgroundColor: `${level.color}20` }}
+                  >
+                    <Icon className="w-6 h-6" style={{ color: level.color }} />
+                  </div>
+                  
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-semibold text-gray-900 dark:text-white">{level.name}</h3>
+                      {isCompleted ? (
+                        <span className="flex items-center gap-1 text-green-500 text-sm">
+                          <CheckIcon className="w-4 h-4" />
+                          完成
+                        </span>
+                      ) : stats.answered > 0 ? (
+                        <span className="text-sm text-gray-500">
+                          {stats.answered}/{stats.total}
+                        </span>
+                      ) : (
+                        <span className="text-sm text-gray-400">未开始</span>
+                      )}
+                    </div>
+                    
+                    {/* 进度条 */}
+                    <div className="mt-2 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{ 
+                          width: `${stats.total > 0 ? (stats.answered / stats.total) * 100 : 0}%`,
+                          backgroundColor: level.color
+                        }}
+                      />
+                    </div>
+                    
+                    {/* 统计信息 */}
+                    <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
+                      <span>正确率 {stats.accuracy}%</span>
+                      <span className="flex items-center gap-1">
+                        <ClockIcon className="w-3 h-3" />
+                        {stats.total > 0 ? '2分钟' : '-'}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <ChevronRightIcon className="w-5 h-5 text-gray-400" />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* 开始完整测评按钮 */}
+      <div className="page-container mt-6">
+        <button
+          onClick={() => handleStartQuiz()}
+          className="w-full py-4 bg-blue-500 text-white rounded-2xl font-semibold flex items-center justify-center gap-2 active:bg-blue-600 transition-colors"
+        >
+          <PlayIcon className="w-5 h-5" />
+          开始完整测评
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// 雷达图预览组件
+const RadarPreview = ({ scores }: { scores: any[] }) => {
+  const maxScore = 100
+  const size = 100
+  const center = size / 2
+  const radius = size / 2 - 10
+  
+  const levels = BLOOM_LEVELS.map(l => l.key)
+  const angles = levels.map((_, i) => (i * 2 * Math.PI) / levels.length - Math.PI / 2)
+  
+  const getPoint = (score: number, angle: number) => {
+    const r = (score / maxScore) * radius
+    return {
+      x: center + r * Math.cos(angle),
+      y: center + r * Math.sin(angle)
+    }
+  }
+  
+  // 绘制网格线
+  const gridLevels = [0.25, 0.5, 0.75, 1]
+  
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      {/* 网格 */}
+      {gridLevels.map(level => (
+        <polygon
+          key={level}
+          points={angles.map((angle, i) => {
+            const r = radius * level
+            const x = center + r * Math.cos(angle)
+            const y = center + r * Math.sin(angle)
+            return `${x},${y}`
+          }).join(' ')}
+          fill="none"
+          stroke="#E5E7EB"
+          strokeWidth="0.5"
+        />
+      ))}
+      
+      {/* 数据区域 */}
+      <polygon
+        points={BLOOM_LEVELS.map((level, i) => {
+          const stat = scores.find(s => s.level === level.key)
+          const score = stat?.accuracy || 0
+          const point = getPoint(score, angles[i])
+          return `${point.x},${point.y}`
+        }).join(' ')}
+        fill="rgba(59, 130, 246, 0.3)"
+        stroke="#3B82F6"
+        strokeWidth="2"
+      />
+      
+      {/* 中心点 */}
+      <circle cx={center} cy={center} r="2" fill="#3B82F6" />
+    </svg>
+  )
+}
+
+export default QuizCenter
+```
+
+#### 12.4.4 答题界面 (QuizPlay)
+
+```tsx
+import React, { memo, useState, useEffect, useCallback, useRef } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import { useQuizStore } from '../stores/quizStore'
+
+// SVG图标
+const ChevronLeftIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M15 18l-6-6 6-6"/>
+  </svg>
+)
+
+const ChevronRightIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M9 18l6-6-6-6"/>
+  </svg>
+)
+
+const FlagIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
+    <line x1="4" y1="22" x2="4" y2="15"/>
+  </svg>
+)
+
+const ClockIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <circle cx="12" cy="12" r="10"/>
+    <path d="M12 6v6l4 2"/>
+  </svg>
+)
+
+const CheckIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M20 6L9 17l-5-5"/>
+  </svg>
+)
+
+const XIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <line x1="18" y1="6" x2="6" y2="18"/>
+    <line x1="6" y1="6" x2="18" y2="18"/>
+  </svg>
+)
+
+const BookOpenIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+    <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+  </svg>
+)
+
+// 认知层级配置
+const BLOOM_LEVELS = [
+  { key: 'remember', name: '记忆', color: '#8B5CF6' },
+  { key: 'understand', name: '理解', color: '#3B82F6' },
+  { key: 'apply', name: '应用', color: '#10B981' },
+  { key: 'analyze', name: '分析', color: '#F59E0B' },
+  { key: 'evaluate', name: '评价', color: '#EF4444' },
+  { key: 'create', name: '创造', color: '#EC4899' },
+]
+
+const DIFFICULTY_LABELS = ['入门', '简单', '中等', '困难', '挑战']
+
+const QuizPlay = () => {
+  const { courseId } = useParams<{ courseId: string }>()
+  const navigate = useNavigate()
+  const { 
+    currentQuestions, 
+    currentIndex, 
+    submitAnswer, 
+    markQuestion, 
+    nextQuestion, 
+    prevQuestion,
+    completeQuiz,
+    quizCompleted
+  } = useQuizStore()
+  
+  const [selectedAnswer, setSelectedAnswer] = useState<string>('')
+  const [timeSpent, setTimeSpent] = useState(0)
+  const [showExplanation, setShowExplanation] = useState(false)
+  const [isAnswered, setIsAnswered] = useState(false)
+  const timerRef = useRef<NodeJS.Timeout>()
+  
+  const currentQuestion = currentQuestions[currentIndex]
+  const isLast = currentIndex === currentQuestions.length - 1
+  const isFirst = currentIndex === 0
+  
+  // 计时器
+  useEffect(() => {
+    if (!quizCompleted && !isAnswered) {
+      timerRef.current = setInterval(() => {
+        setTimeSpent(prev => prev + 1)
+      }, 1000)
+    }
+    
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current)
+    }
+  }, [quizCompleted, isAnswered])
+  
+  // 格式化时间
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins}:${secs.toString().padStart(2, '0')}`
+  }
+  
+  const handleSelectAnswer = useCallback((answer: string) => {
+    if (isAnswered) return
+    setSelectedAnswer(answer)
+  }, [isAnswered])
+  
+  const handleSubmit = useCallback(async () => {
+    if (!selectedAnswer) return
+    
+    if (timerRef.current) clearInterval(timerRef.current)
+    
+    await submitAnswer(selectedAnswer, timeSpent)
+    setIsAnswered(true)
+    setShowExplanation(true)
+  }, [selectedAnswer, timeSpent, submitAnswer])
+  
+  const handleNext = useCallback(() => {
+    if (isLast) {
+      await completeQuiz()
+      navigate(`/quiz/${courseId}/report`)
+    } else {
+      nextQuestion()
+      setSelectedAnswer('')
+      setTimeSpent(0)
+      setIsAnswered(false)
+      setShowExplanation(false)
+    }
+  }, [isLast, nextQuestion, completeQuiz, navigate, courseId])
+  
+  const handlePrev = useCallback(() => {
+    if (!isFirst) {
+      prevQuestion()
+      const prevQ = currentQuestions[currentIndex - 1]
+      setSelectedAnswer(prevQ?.userAnswer || '')
+      setTimeSpent(0)
+      setIsAnswered(!!prevQ?.userAnswer)
+      setShowExplanation(!!prevQ?.userAnswer)
+    }
+  }, [isFirst, prevQuestion, currentQuestions, currentIndex])
+  
+  const handleMark = useCallback(() => {
+    if (currentQuestion) {
+      markQuestion(currentQuestion.id)
+    }
+  }, [currentQuestion, markQuestion])
+  
+  const handleComplete = useCallback(async () => {
+    await completeQuiz()
+    navigate(`/quiz/${courseId}/report`)
+  }, [completeQuiz, navigate, courseId])
+  
+  if (!currentQuestion) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p className="text-gray-500">暂无题目</p>
+      </div>
+    )
+  }
+  
+  const levelConfig = BLOOM_LEVELS.find(l => l.key === currentQuestion.bloomLevel)
+  const difficulty = currentQuestion.difficulty
+  const isMarked = currentQuestion.isMarked
+  
+  return (
+    <div className="min-h-screen pb-20">
+      {/* 顶部导航 */}
+      <div className="sticky top-0 bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 z-10">
+        <div className="page-container py-3">
+          <div className="flex items-center justify-between">
+            <button onClick={() => navigate(`/quiz/${courseId}`)} className="p-2">
+              <ChevronLeftIcon className="w-6 h-6" />
+            </button>
+            
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500">
+                {currentIndex + 1} / {currentQuestions.length}
+              </span>
+              <div className="flex items-center gap-1 text-sm">
+                <ClockIcon className="w-4 h-4 text-gray-400" />
+                <span className="text-gray-600 dark:text-gray-400">{formatTime(timeSpent)}</span>
+              </div>
+            </div>
+            
+            <button onClick={handleMark} className={`p-2 ${isMarked ? 'text-orange-500' : 'text-gray-400'}`}>
+              <FlagIcon className="w-5 h-5" />
+            </button>
+          </div>
+          
+          {/* 进度条 */}
+          <div className="mt-2 h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-blue-500 rounded-full transition-all duration-300"
+              style={{ width: `${((currentIndex + 1) / currentQuestions.length) * 100}%` }}
+            />
+          </div>
+        </div>
+      </div>
+      
+      {/* 题目内容 */}
+      <div className="page-container mt-4">
+        {/* 层级和难度标签 */}
+        <div className="flex items-center gap-2 mb-4">
+          <span 
+            className="px-2 py-1 text-xs text-white rounded"
+            style={{ backgroundColor: levelConfig?.color }}
+          >
+            {levelConfig?.name}
+          </span>
+          <span className={`text-xs ${['text-green-500', 'text-emerald-500', 'text-yellow-500', 'text-orange-500', 'text-red-500'][difficulty - 1]}`}>
+            {DIFFICULTY_LABELS[difficulty - 1]}
+          </span>
+        </div>
+        
+        {/* 题目卡片 */}
+        <div className="card p-6 mb-4">
+          <h2 className="text-lg font-medium text-gray-900 dark:text-white leading-relaxed">
+            {currentQuestion.content}
+          </h2>
+        </div>
+        
+        {/* 选项 */}
+        {currentQuestion.options && (
+          <div className="space-y-3">
+            {currentQuestion.options.map((option, index) => {
+              const isSelected = selectedAnswer === option
+              const isCorrect = option === currentQuestion.correctAnswer
+              const showResult = isAnswered
+              
+              let optionClass = 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700'
+              if (showResult) {
+                if (isCorrect) {
+                  optionClass = 'bg-green-50 dark:bg-green-900/20 border-green-500'
+                } else if (isSelected && !isCorrect) {
+                  optionClass = 'bg-red-50 dark:bg-red-900/20 border-red-500'
+                }
+              } else if (isSelected) {
+                optionClass = 'bg-blue-50 dark:bg-blue-900/20 border-blue-500'
+              }
+              
+              return (
+                <button
+                  key={index}
+                  onClick={() => handleSelectAnswer(option)}
+                  disabled={isAnswered}
+                  className={`w-full p-4 rounded-xl border-2 text-left transition-all ${optionClass} ${!isAnswered ? 'hover:border-blue-300 active:scale-98' : ''}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                      showResult 
+                        ? isCorrect 
+                          ? 'bg-green-500 text-white'
+                          : isSelected 
+                            ? 'bg-red-500 text-white'
+                            : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
+                        : isSelected 
+                          ? 'bg-blue-500 text-white'
+                          : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
+                    }`}>
+                      {String.fromCharCode(65 + index)}
+                    </div>
+                    <span className="flex-1 text-gray-700 dark:text-gray-200">{option}</span>
+                    {showResult && isCorrect && (
+                      <CheckIcon className="w-5 h-5 text-green-500" />
+                    )}
+                    {showResult && isSelected && !isCorrect && (
+                      <XIcon className="w-5 h-5 text-red-500" />
+                    )}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        )}
+        
+        {/* 简答题输入 */}
+        {!currentQuestion.options && (
+          <div>
+            <textarea
+              value={selectedAnswer}
+              onChange={(e) => handleSelectAnswer(e.target.value)}
+              disabled={isAnswered}
+              placeholder="请输入你的答案..."
+              className="w-full p-4 rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-200 resize-none focus:border-blue-500 focus:outline-none"
+              rows={6}
+            />
+          </div>
+        )}
+        
+        {/* 答案解析 */}
+        {showExplanation && currentQuestion.explanation && (
+          <div className="mt-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-2xl p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <BookOpenIcon className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
+              <h4 className="font-medium text-yellow-800 dark:text-yellow-200">答案解析</h4>
+            </div>
+            <p className="text-sm text-yellow-700 dark:text-yellow-300">
+              {currentQuestion.explanation}
+            </p>
+          </div>
+        )}
+      </div>
+      
+      {/* 底部操作栏 */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800">
+        <div className="page-container py-3">
+          <div className="flex gap-3">
+            <button
+              onClick={handlePrev}
+              disabled={isFirst}
+              className="flex-1 py-3 px-4 rounded-xl border-2 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              <ChevronLeftIcon className="w-4 h-4" />
+              上一题
+            </button>
+            
+            {!isAnswered ? (
+              <button
+                onClick={handleSubmit}
+                disabled={!selectedAnswer}
+                className="flex-1 py-3 px-4 rounded-xl bg-blue-500 text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                提交答案
+              </button>
+            ) : isLast ? (
+              <button
+                onClick={handleComplete}
+                className="flex-1 py-3 px-4 rounded-xl bg-green-500 text-white flex items-center justify-center gap-2"
+              >
+                完成测评
+              </button>
+            ) : (
+              <button
+                onClick={handleNext}
+                className="flex-1 py-3 px-4 rounded-xl bg-blue-500 text-white flex items-center justify-center gap-2"
+              >
+                下一题
+                <ChevronRightIcon className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default QuizPlay
+```
+
+#### 12.4.5 测评报告页面 (QuizReport)
+
+```tsx
+import React, { memo } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import { useQuizStore } from '../stores/quizStore'
+
+// SVG图标
+const ChevronLeftIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M15 18l-6-6 6-6"/>
+  </svg>
+)
+
+const RotateCcwIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path d="M1 4v6h6"/>
+    <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+  </svg>
+)
+
+const CheckCircleIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+    <path d="M22 4L12 14.01l-3-3"/>
+  </svg>
+)
+
+const XCircleIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <circle cx="12" cy="12" r="10"/>
+    <line x1="15" y1="9" x2="9" y2="15"/>
+    <line x1="9" y1="9" x2="15" y2="15"/>
+  </svg>
+)
+
+const BookOpenIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+    <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+  </svg>
+)
+
+const LightbulbIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path d="M9 18h6"/>
+    <path d="M10 22h4"/>
+    <path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14"/>
+  </svg>
+)
+
+const BrainIcon = ({ className = "w-6 h-6" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path d="M12 4.5c1.5 0 3 .5 4 1.5l.5.5c1 1 1.5 2.5 1.5 4v1c0 2-1 4-3 5.5l-1 1c-.5.5-1 1-1.5 1.5l-.5.5c-1 1-2.5 1.5-4 1.5s-3-.5-4-1.5l-.5-.5c-.5-.5-1-1-1.5-1.5l-1-1C5 16 4 14 4 12v-1c0-1.5.5-3 1.5-4l.5-.5c1-1 2.5-1.5 4-1.5z"/>
+    <path d="M12 4.5v15"/>
+  </svg>
+)
+
+const BookOpenFilledIcon = ({ className = "w-6 h-6" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+    <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+  </svg>
+)
+
+const LightningIcon = ({ className = "w-6 h-6" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+  </svg>
+)
+
+const MagnifyingGlassIcon = ({ className = "w-6 h-6" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <circle cx="11" cy="11" r="8"/>
+    <path d="M21 21l-4.35-4.35"/>
+  </svg>
+)
+
+const StarIcon = ({ className = "w-6 h-6" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+  </svg>
+)
+
+const SparklesIcon = ({ className = "w-6 h-6" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z"/>
+    <path d="M5 19l1 3 1-3 3-1-3-1-1-3-1 3-3 1 3 1z"/>
+  </svg>
+)
+
+// 认知层级配置
+const BLOOM_LEVELS = [
+  { key: 'remember', name: '记忆', color: '#8B5CF6', icon: BrainIcon },
+  { key: 'understand', name: '理解', color: '#3B82F6', icon: BookOpenFilledIcon },
+  { key: 'apply', name: '应用', color: '#10B981', icon: LightningIcon },
+  { key: 'analyze', name: '分析', color: '#F59E0B', icon: MagnifyingGlassIcon },
+  { key: 'evaluate', name: '评价', color: '#EF4444', icon: StarIcon },
+  { key: 'create', name: '创造', color: '#EC4899', icon: SparklesIcon },
+]
+
+const QuizReport = () => {
+  const { courseId } = useParams<{ courseId: string }>()
+  const navigate = useNavigate()
+  const { report, resetQuiz } = useQuizStore()
+  
+  const handleRetry = () => {
+    resetQuiz()
+    navigate(`/quiz/${courseId}`)
+  }
+  
+  const handleBackToCourse = () => {
+    navigate(`/learning/${courseId}`)
+  }
+  
+  if (!report) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p className="text-gray-500">暂无报告数据</p>
+      </div>
+    )
+  }
+  
+  return (
+    <div className="min-h-screen pb-20">
+      {/* 顶部导航 */}
+      <div className="sticky top-0 bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 z-10">
+        <div className="page-container py-3">
+          <div className="flex items-center justify-between">
+            <button onClick={() => navigate(`/quiz/${courseId}`)} className="p-2">
+              <ChevronLeftIcon className="w-6 h-6" />
+            </button>
+            <h1 className="text-lg font-semibold">测评报告</h1>
+            <div className="w-10" />
+          </div>
+        </div>
+      </div>
+      
+      {/* 总体正确率 */}
+      <div className="page-container mt-4">
+        <div className="score-card bg-gradient-to-br from-blue-500 to-indigo-600 rounded-3xl p-6 text-white">
+          <div className="text-center">
+            <div className="text-5xl font-bold mb-2">{report.accuracy}%</div>
+            <div className="text-blue-100">综合正确率</div>
+          </div>
+          
+          <div className="grid grid-cols-3 gap-4 mt-6 pt-6 border-t border-white/20">
+            <div className="text-center">
+              <div className="text-2xl font-bold">{report.totalQuestions}</div>
+              <div className="text-sm text-blue-100">总题数</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-green-300">{report.correctCount}</div>
+              <div className="text-sm text-blue-100">正确</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-red-300">{report.totalQuestions - report.correctCount}</div>
+              <div className="text-sm text-blue-100">错误</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      {/* 能力雷达图 */}
+      <div className="page-container mt-4">
+        <div className="card p-4">
+          <h2 className="text-sm font-medium text-gray-500 mb-4">能力雷达图</h2>
+          <AbilityRadarChart abilityScores={report.abilityScores} />
+        </div>
+      </div>
+      
+      {/* 薄弱环节 */}
+      {report.suggestions.weakAreas.length > 0 && (
+        <div className="page-container mt-4">
+          <div className="card p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <LightbulbIcon className="w-5 h-5 text-yellow-500" />
+              <h2 className="text-sm font-medium text-gray-500">薄弱环节</h2>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {report.suggestions.weakAreas.map(area => {
+                const level = BLOOM_LEVELS.find(l => l.key === area)
+                return (
+                  <span 
+                    key={area}
+                    className="px-3 py-1 text-sm rounded-full text-white"
+                    style={{ backgroundColor: level?.color }}
+                  >
+                    {level?.name}
+                  </span>
+                )
+              })}
+            </div>
+            <p className="mt-3 text-sm text-gray-600 dark:text-gray-400">
+              {report.suggestions.studyTips}
+            </p>
+          </div>
+        </div>
+      )}
+      
+      {/* 错题本 */}
+      {report.mistakes.length > 0 && (
+        <div className="page-container mt-4">
+          <div className="card p-4">
+            <div className="flex items-center gap-2 mb-4">
+              <BookOpenIcon className="w-5 h-5 text-blue-500" />
+              <h2 className="text-sm font-medium text-gray-500">错题本</h2>
+              <span className="ml-auto text-sm text-gray-400">{report.mistakes.length}题</span>
+            </div>
+            
+            <div className="space-y-4">
+              {report.mistakes.map((item, index) => (
+                <div key={index} className="border border-gray-100 dark:border-gray-700 rounded-xl p-4">
+                  <div className="flex items-start gap-3 mb-2">
+                    <XCircleIcon className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">
+                        {item.question.content}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="ml-8 space-y-2 text-sm">
+                    <div className="text-red-600 dark:text-red-400">
+                      <span className="text-gray-500">你的答案：</span>
+                      {item.userAnswer || '未作答'}
+                    </div>
+                    <div className="text-green-600 dark:text-green-400">
+                      <span className="text-gray-500">正确答案：</span>
+                      {item.correctAnswer}
+                    </div>
+                    {item.explanation && (
+                      <div className="text-gray-600 dark:text-gray-400">
+                        <span className="text-gray-500">解析：</span>
+                        {item.explanation}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* 操作按钮 */}
+      <div className="page-container mt-6">
+        <div className="flex gap-3">
+          <button
+            onClick={handleRetry}
+            className="flex-1 py-3 px-4 rounded-xl border-2 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 flex items-center justify-center gap-2"
+          >
+            <RotateCcwIcon className="w-5 h-5" />
+            重新练习
+          </button>
+          <button
+            onClick={handleBackToCourse}
+            className="flex-1 py-3 px-4 rounded-xl bg-blue-500 text-white flex items-center justify-center gap-2"
+          >
+            返回学习
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// 能力雷达图组件
+const AbilityRadarChart = ({ abilityScores }: { abilityScores: Record<string, number> }) => {
+  const size = 200
+  const center = size / 2
+  const radius = size / 2 - 20
+  
+  const levels = BLOOM_LEVELS.map(l => l.key)
+  const angles = levels.map((_, i) => (i * 2 * Math.PI) / levels.length - Math.PI / 2)
+  
+  const maxScore = 100
+  
+  const getPoint = (score: number, angle: number) => {
+    const r = (score / maxScore) * radius
+    return {
+      x: center + r * Math.cos(angle),
+      y: center + r * Math.sin(angle)
+    }
+  }
+  
+  // 网格层级
+  const gridLevels = [0.25, 0.5, 0.75, 1]
+  
+  return (
+    <div className="flex flex-col items-center">
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        {/* 网格 */}
+        {gridLevels.map(level => (
+          <polygon
+            key={level}
+            points={angles.map((angle, i) => {
+              const r = radius * level
+              const x = center + r * Math.cos(angle)
+              const y = center + r * Math.sin(angle)
+              return `${x},${y}`
+            }).join(' ')}
+            fill="none"
+            stroke="#E5E7EB"
+            strokeWidth="0.5"
+          />
+        ))}
+        
+        {/* 轴线 */}
+        {angles.map((angle, i) => {
+          const x = center + radius * Math.cos(angle)
+          const y = center + radius * Math.sin(angle)
+          return (
+            <line
+              key={i}
+              x1={center}
+              y1={center}
+              x2={x}
+              y2={y}
+              stroke="#E5E7EB"
+              strokeWidth="0.5"
+            />
+          )
+        })}
+        
+        {/* 数据区域 */}
+        <polygon
+          points={BLOOM_LEVELS.map((level, i) => {
+            const score = abilityScores[level.key] || 0
+            const point = getPoint(score, angles[i])
+            return `${point.x},${point.y}`
+          }).join(' ')}
+          fill="rgba(59, 130, 246, 0.3)"
+          stroke="#3B82F6"
+          strokeWidth="2"
+        />
+        
+        {/* 数据点 */}
+        {BLOOM_LEVELS.map((level, i) => {
+          const score = abilityScores[level.key] || 0
+          const point = getPoint(score, angles[i])
+          return (
+            <circle
+              key={level.key}
+              cx={point.x}
+              cy={point.y}
+              r="4"
+              fill={level.color}
+              stroke="#fff"
+              strokeWidth="2"
+            />
+          )
+        })}
+      </svg>
+      
+      {/* 图例 */}
+      <div className="flex flex-wrap justify-center gap-3 mt-4">
+        {BLOOM_LEVELS.map(level => (
+          <div key={level.key} className="flex items-center gap-1">
+            <div 
+              className="w-3 h-3 rounded-full"
+              style={{ backgroundColor: level.color }}
+            />
+            <span className="text-xs text-gray-500">{level.name}</span>
+            <span className="text-xs font-medium">{abilityScores[level.key] || 0}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+export default QuizReport
+```
+
+### 12.5 CSS样式规范
+
+#### 12.5.1 认知层级网格
+
+```css
+/* 认知层级网格容器 */
+.bloom-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* 认知层级卡片 */
+.bloom-card {
+  background: var(--bg-secondary);
+  border-radius: 16px;
+  padding: 16px;
+  border-top-width: 4px;
+  border-top-style: solid;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.bloom-card:active {
+  transform: scale(0.98);
+}
+
+/* 各层级颜色 */
+.bloom-card.remember { border-top-color: #8B5CF6; }
+.bloom-card.understand { border-top-color: #3B82F6; }
+.bloom-card.apply { border-top-color: #10B981; }
+.bloom-card.analyze { border-top-color: #F59E0B; }
+.bloom-card.evaluate { border-top-color: #EF4444; }
+.bloom-card.create { border-top-color: #EC4899; }
+```
+
+#### 12.5.2 选项按钮
+
+```css
+/* 选项按钮基础样式 */
+.option-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--bg-secondary);
+  border: 2px solid var(--separator);
+  border-radius: 14px;
+  transition: all 0.2s ease;
+}
+
+/* 选中状态 */
+.option-btn.selected {
+  border-color: var(--accent);
+  background: rgba(10, 132, 255, 0.1);
+}
+
+/* 正确状态 */
+.option-btn.correct {
+  border-color: #34c759;
+  background: rgba(52, 199, 89, 0.1);
+}
+
+/* 错误状态 */
+.option-btn.incorrect {
+  border-color: #ff3b30;
+  background: rgba(255, 59, 48, 0.1);
+}
+
+/* 选项字母圆圈 */
+.option-letter {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 500;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  transition: all 0.2s ease;
+}
+
+.option-btn.selected .option-letter {
+  background: var(--accent);
+  color: white;
+}
+
+.option-btn.correct .option-letter {
+  background: #34c759;
+  color: white;
+}
+
+.option-btn.incorrect .option-letter {
+  background: #ff3b30;
+  color: white;
+}
+```
+
+#### 12.5.3 报告卡片
+
+```css
+/* 分数卡片 */
+.score-card {
+  background: linear-gradient(135deg, var(--accent) 0%, #5856d6 100%);
+  border-radius: 24px;
+  padding: 24px;
+  color: white;
+}
+
+/* 错题卡片 */
+.mistake-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--separator);
+  border-radius: 16px;
+  padding: 16px;
+}
+
+/* 错题正确答案标签 */
+.correct-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 12px;
+  background: rgba(52, 199, 89, 0.1);
+  color: #34c759;
+}
+
+/* 错题错误答案标签 */
+.incorrect-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 12px;
+  background: rgba(255, 59, 48, 0.1);
+  color: #ff3b30;
+}
+
+/* 解析卡片 */
+.explanation-card {
+  background: rgba(255, 149, 0, 0.1);
+  border-radius: 16px;
+  padding: 16px;
+}
+
+/* 薄弱环节标签 */
+.weakness-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 9999px;
+  font-size: 14px;
+  color: white;
+}
+```
+
+### 12.6 路由配置
+
+```tsx
+// App.tsx 中的路由配置
+<Route path="/quiz/:courseId" element={<QuizCenter />} />
+<Route path="/quiz/:courseId/play" element={<QuizPlay />} />
+<Route path="/quiz/:courseId/report" element={<QuizReport />} />
+```
+
+### 12.7 功能清单
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 认知层级分类 | ✅ | 6个层级，按颜色区分 |
+| 难度标注 | ✅ | 入门/简单/中等/困难/挑战 |
+| 知识点标注 | ✅ | 显示关联知识点 |
+| 单题展示 | ✅ | 每次一题，专注作答 |
+| 标记题目 | ✅ | 可标记需复习的题目 |
+| 查看解析 | ✅ | 提交后显示答案和解析 |
+| 能力雷达图 | ✅ | 6维度能力可视化 |
+| 错题本 | ✅ | 错题收集+解析 |
+| 复习建议 | ✅ | AI生成个性化建议 |
+| 计时功能 | ✅ | 显示答题时间 |
+| 进度追踪 | ✅ | 显示当前进度 |
+
+---
+
+## 十四、后端路由层（Backend Router Layer）
+
+### 14.1 课程管理路由 (backend/routers/courses.py)
+
+```python
+import uuid
+import json
+from datetime import datetime
+from fastapi import APIRouter, HTTPException, BackgroundTasks
+from typing import Optional, List
+
+from database import get_db
+from models import CourseCreate, CourseResponse, CourseUpdateStatus, CourseUpdateProgress, SuccessResponse
+
+router = APIRouter()
+
+# 辅助函数：格式化课程响应
+def format_course(row) -> dict:
+    """将数据库行转换为响应格式"""
+    return {
+        "id": row["id"],
+        "title": row["title"],
+        "keywords": json.loads(row["keywords"]) if row["keywords"] else [],
+        "original_question": row["original_question"],
+        "status": row["status"],
+        "progress": 0,
+        "three_ask_progress": {
+            "question1": False,
+            "question2": False,
+            "question3": False
+        },
+        "created_at": row["created_at"],
+        "last_accessed": row.get("updated_at", row["created_at"])
+    }
+
+@router.post("/create", response_model=CourseResponse)
+async def create_course(
+    req: CourseCreate,
+    background_tasks: BackgroundTasks
+):
+    """创建课程：用户提问触发"""
+    
+    # 1. 生成课程 ID
+    course_id = str(uuid.uuid4())
+    now = int(datetime.now().timestamp() * 1000)
+    
+    # 2. 从问题中提取标题（简化版，实际可调用 LLM）
+    title = req.question[:50] if len(req.question) > 50 else req.question
+    if len(title) < 10:
+        title = f"课程：{title}"
+    
+    # 3. 提取关键词（简化版）
+    keywords = json.dumps(["AI", "学习", "自定义"])
+    
+    # 4. 保存到数据库
+    with get_db() as conn:
+        conn.execute("""
+            INSERT INTO courses (id, title, keywords, original_question, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (course_id, title, keywords, req.question, "active", now, now))
+        
+        # 同时创建学习进度记录
+        conn.execute("""
+            INSERT INTO learning_progress (id, course_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?)
+        """, (f"progress_{course_id}", course_id, now, now))
+        
+        conn.commit()
+        
+        # 获取刚创建的课程
+        row = conn.execute("SELECT * FROM courses WHERE id = ?", (course_id,)).fetchone()
+    
+    # 5. 后台触发 AI 资料补充（异步）
+    background_tasks.add_task(ai_supplement_background, course_id, req.question)
+    
+    return format_course(row)
+
+async def ai_supplement_background(course_id: str, question: str):
+    """后台异步补充 AI 资料"""
+    # TODO: 实现联网检索和资料补充
+    print(f"正在为课程 {course_id} 补充 AI 资料，问题：{question}")
+    pass
+
+@router.get("/list")
+async def list_courses(
+    status: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0
+):
+    """获取课程列表"""
+    with get_db() as conn:
+        query = "SELECT * FROM courses"
+        params = []
+        
+        if status:
+            query += " WHERE status = ?"
+            params.append(status)
+        
+        query += " ORDER BY updated_at DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+        
+        rows = conn.execute(query, params).fetchall()
+        
+        # 获取每个课程的进度
+        courses = []
+        for row in rows:
+            course = format_course(row)
+            
+            # 获取三问进度
+            progress_row = conn.execute(
+                "SELECT q1_completed, q2_completed, q3_completed, overall_progress FROM learning_progress WHERE course_id = ?",
+                (row["id"],)
+            ).fetchone()
+            
+            if progress_row:
+                course["progress"] = progress_row["overall_progress"] or 0
+                course["three_ask_progress"] = {
+                    "question1": bool(progress_row["q1_completed"]),
+                    "question2": bool(progress_row["q2_completed"]),
+                    "question3": bool(progress_row["q3_completed"])
+                }
+            
+            courses.append(course)
+        
+        return {"courses": courses, "total": len(courses)}
+
+@router.get("/{course_id}")
+async def get_course(course_id: str):
+    """获取单个课程详情"""
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM courses WHERE id = ?", (course_id,)).fetchone()
+        
+        if not row:
+            raise HTTPException(status_code=404, detail="课程不存在")
+        
+        # 更新最后访问时间
+        conn.execute(
+            "UPDATE courses SET updated_at = ? WHERE id = ?",
+            (int(datetime.now().timestamp() * 1000), course_id)
+        )
+        conn.commit()
+        
+        course = format_course(row)
+        
+        # 获取三问进度
+        progress_row = conn.execute(
+            "SELECT q1_completed, q2_completed, q3_completed, overall_progress FROM learning_progress WHERE course_id = ?",
+            (course_id,)
+        ).fetchone()
+        
+        if progress_row:
+            course["progress"] = progress_row["overall_progress"] or 0
+            course["three_ask_progress"] = {
+                "question1": bool(progress_row["q1_completed"]),
+                "question2": bool(progress_row["q2_completed"]),
+                "question3": bool(progress_row["q3_completed"])
+            }
+        
+        return course
+
+@router.patch("/{course_id}/status")
+async def update_course_status(course_id: str, req: CourseUpdateStatus):
+    """更新课程状态"""
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM courses WHERE id = ?", (course_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="课程不存在")
+        
+        conn.execute(
+            "UPDATE courses SET status = ?, updated_at = ? WHERE id = ?",
+            (req.status, int(datetime.now().timestamp() * 1000), course_id)
+        )
+        conn.commit()
+    
+    return SuccessResponse(success=True, message=f"课程状态已更新为 {req.status}")
+
+@router.patch("/{course_id}/progress")
+async def update_course_progress(course_id: str, req: CourseUpdateProgress):
+    """更新课程进度"""
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM learning_progress WHERE course_id = ?", (course_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="课程进度记录不存在")
+        
+        # 根据进度推算三问完成度
+        q1 = 1 if req.progress >= 33 else 0
+        q2 = 1 if req.progress >= 66 else 0
+        q3 = 1 if req.progress >= 100 else 0
+        
+        conn.execute("""
+            UPDATE learning_progress 
+            SET overall_progress = ?, q1_completed = ?, q2_completed = ?, q3_completed = ?, updated_at = ?
+            WHERE course_id = ?
+        """, (req.progress, q1, q2, q3, int(datetime.now().timestamp() * 1000), course_id))
+        conn.commit()
+    
+    return SuccessResponse(success=True, message="进度已更新")
+
+@router.delete("/{course_id}")
+async def delete_course(course_id: str):
+    """删除课程（软删除，标记为 deleted）"""
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM courses WHERE id = ?", (course_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="课程不存在")
+        
+        conn.execute(
+            "UPDATE courses SET status = 'deleted', updated_at = ? WHERE id = ?",
+            (int(datetime.now().timestamp() * 1000), course_id)
+        )
+        conn.commit()
+    
+    return SuccessResponse(success=True, message="课程已删除")
+```
+
+### 14.2 知识库路由 (backend/routers/knowledge.py)
+
+```python
+import uuid
+import os
+import shutil
+import json
+from datetime import datetime
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, BackgroundTasks
+from typing import Optional, List
+from pathlib import Path
+
+from database import get_db
+from models import SearchRequest, SuccessResponse
+
+router = APIRouter()
+
+# 上传目录配置
+UPLOAD_DIR = Path("./data/uploads")
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+# 支持的文件类型
+ALLOWED_TYPES = {
+    "application/pdf": ".pdf",
+    "application/msword": ".doc",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "text/markdown": ".md",
+    "text/plain": ".txt"
+}
+
+MAX_FILE_SIZES = {
+    "application/pdf": 20 * 1024 * 1024,
+    "application/msword": 10 * 1024 * 1024,
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": 10 * 1024 * 1024,
+    "text/markdown": 5 * 1024 * 1024,
+    "text/plain": 5 * 1024 * 1024
+}
+
+@router.post("/upload")
+async def upload_document(
+    course_id: str = Form(...),
+    file: UploadFile = File(...),
+    background_tasks: BackgroundTasks = None
+):
+    """用户上传资料（PDF/Word/Markdown）"""
+    
+    # 1. 验证文件类型
+    if file.content_type not in ALLOWED_TYPES:
+        raise HTTPException(400, f"不支持的文件类型: {file.content_type}")
+    
+    # 2. 验证文件大小
+    file_size = 0
+    content = await file.read()
+    file_size = len(content)
+    await file.seek(0)  # 重置指针
+    
+    if file_size > MAX_FILE_SIZES[file.content_type]:
+        raise HTTPException(413, f"文件过大，最大 {MAX_FILE_SIZES[file.content_type] // (1024*1024)}MB")
+    
+    # 3. 保存文件
+    ext = ALLOWED_TYPES[file.content_type]
+    file_name = f"{uuid.uuid4().hex}{ext}"
+    course_upload_dir = UPLOAD_DIR / course_id
+    course_upload_dir.mkdir(parents=True, exist_ok=True)
+    file_path = course_upload_dir / file_name
+    
+    with open(file_path, "wb") as f:
+        f.write(content)
+    
+    # 4. 提取文本内容（简化版，实际需要调用解析服务）
+    content_text = f"文件内容：{file.filename}\n请使用解析服务提取完整文本。"
+    
+    # 5. 保存到数据库
+    doc_id = str(uuid.uuid4())
+    now = int(datetime.now().timestamp() * 1000)
+    
+    with get_db() as conn:
+        conn.execute("""
+            INSERT INTO documents (id, course_id, title, content, file_path, file_type, source, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (doc_id, course_id, file.filename, content_text, str(file_path), file.content_type, "user", now))
+        conn.commit()
+    
+    # 6. 后台触发向量化和融合
+    if background_tasks:
+        background_tasks.add_task(vectorize_document, course_id, doc_id, content_text)
+    
+    return SuccessResponse(success=True, message="文件上传成功", data={"doc_id": doc_id})
+
+async def vectorize_document(course_id: str, doc_id: str, content: str):
+    """后台向量化文档"""
+    # TODO: 调用 Embedding 服务
+    print(f"正在向量化文档 {doc_id}，内容长度: {len(content)}")
+
+@router.post("/ai-fetch/{course_id}")
+async def ai_fetch_documents(
+    course_id: str,
+    background_tasks: BackgroundTasks
+):
+    """AI 自动联网检索权威资料"""
+    
+    # 获取课程关键词
+    with get_db() as conn:
+        row = conn.execute("SELECT title, keywords FROM courses WHERE id = ?", (course_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "课程不存在")
+        
+        keywords = json.loads(row["keywords"]) if row["keywords"] else [row["title"]]
+    
+    # 后台触发 AI 搜索
+    background_tasks.add_task(ai_search_background, course_id, keywords)
+    
+    return SuccessResponse(success=True, message="AI 资料补充已启动")
+
+async def ai_search_background(course_id: str, keywords: List[str]):
+    """后台 AI 搜索"""
+    # TODO: 实现联网检索
+    print(f"正在为课程 {course_id} 搜索关键词: {keywords}")
+
+@router.get("/documents")
+async def list_documents(
+    course_id: str,
+    source: Optional[str] = None
+):
+    """获取课程资料列表"""
+    with get_db() as conn:
+        query = "SELECT * FROM documents WHERE course_id = ?"
+        params = [course_id]
+        
+        if source:
+            query += " AND source = ?"
+            params.append(source)
+        
+        query += " ORDER BY created_at DESC"
+        
+        rows = conn.execute(query, params).fetchall()
+        
+        documents = []
+        for row in rows:
+            documents.append({
+                "id": row["id"],
+                "title": row["title"],
+                "content_preview": row["content"][:200] if row["content"] else "",
+                "file_type": row["file_type"],
+                "source": row["source"],
+                "created_at": row["created_at"]
+            })
+        
+        return {"documents": documents}
+
+@router.get("/documents/{doc_id}")
+async def get_document(doc_id: str):
+    """获取单个资料详情"""
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM documents WHERE id = ?", (doc_id,)).fetchone()
+        
+        if not row:
+            raise HTTPException(404, "资料不存在")
+        
+        return {
+            "id": row["id"],
+            "title": row["title"],
+            "content": row["content"],
+            "file_path": row["file_path"],
+            "file_type": row["file_type"],
+            "source": row["source"],
+            "created_at": row["created_at"]
+        }
+
+@router.delete("/documents/{doc_id}")
+async def delete_document(doc_id: str):
+    """删除资料"""
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM documents WHERE id = ?", (doc_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "资料不存在")
+        
+        # 删除本地文件
+        if row["file_path"] and Path(row["file_path"]).exists():
+            Path(row["file_path"]).unlink()
+        
+        # 删除数据库记录
+        conn.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
+        conn.commit()
+    
+    return SuccessResponse(success=True, message="资料已删除")
+
+@router.post("/search")
+async def semantic_search(req: SearchRequest):
+    """语义检索知识库"""
+    # TODO: 实现向量检索
+    return {
+        "results": [
+            {
+                "content": "这是检索结果的示例内容",
+                "score": 0.95,
+                "metadata": {"source": "AI补充资料", "title": "示例文档"}
+            }
+        ]
+    }
+```
+
+### 14.3 三问引擎路由 (backend/routers/three_ask.py)
+
+```python
+import json
+import uuid
+from datetime import datetime
+from fastapi import APIRouter, HTTPException, BackgroundTasks
+from typing import List, Optional
+
+from database import get_db
+from models import KnowledgeGraph, Controversy, QuizQuestion, QuizSubmit, SuccessResponse
+
+router = APIRouter()
+
+@router.post("/graph/generate/{course_id}")
+async def generate_graph(course_id: str):
+    """第一问：生成知识图谱"""
+    
+    with get_db() as conn:
+        # 获取课程资料
+        docs = conn.execute(
+            "SELECT content, title FROM documents WHERE course_id = ? LIMIT 5",
+            (course_id,)
+        ).fetchall()
+        
+        if not docs:
+            return KnowledgeGraph(nodes=[], links=[])
+    
+    # TODO: 调用 AI 服务生成图谱
+    # 临时返回示例数据
+    graph_data = {
+        "nodes": [
+            {"id": "node1", "name": "核心概念", "description": "这是核心概念", "bloom_level": "understand", "difficulty": 0.5, "is_threshold_concept": True},
+            {"id": "node2", "name": "相关概念", "description": "这是相关概念", "bloom_level": "remember", "difficulty": 0.3, "is_threshold_concept": False}
+        ],
+        "links": [
+            {"source": "node1", "target": "node2", "relation": "related", "strength": 0.8}
+        ]
+    }
+    
+    # 缓存图谱数据
+    with get_db() as conn:
+        conn.execute("""
+            INSERT OR REPLACE INTO knowledge_graphs (course_id, graph_data, updated_at)
+            VALUES (?, ?, ?)
+        """, (course_id, json.dumps(graph_data), int(datetime.now().timestamp() * 1000)))
+        conn.commit()
+    
+    return graph_data
+
+@router.post("/graph/update/{course_id}")
+async def update_graph_incremental(course_id: str, doc_id: str):
+    """增量更新知识图谱"""
+    # TODO: 实现增量更新逻辑
+    return await generate_graph(course_id)
+
+@router.post("/controversy/detect/{course_id}")
+async def detect_controversy(
+    course_id: str,
+    background_tasks: BackgroundTasks
+):
+    """第二问：异步检测学术分歧"""
+    
+    with get_db() as conn:
+        # 检查资料数量
+        doc_count = conn.execute(
+            "SELECT COUNT(*) FROM documents WHERE course_id = ?",
+            (course_id,)
+        ).fetchone()[0]
+        
+        if doc_count < 2:
+            return {"status": "skipped", "message": "需要至少2份资料才能进行争议分析"}
+    
+    # 异步处理
+    background_tasks.add_task(controversy_detection_background, course_id)
+    
+    return {"status": "processing", "message": "争议分析已开始"}
+
+async def controversy_detection_background(course_id: str):
+    """后台争议检测"""
+    # TODO: 实现 NLI 模型检测
+    print(f"正在分析课程 {course_id} 的争议点")
+    
+    # 示例争议数据
+    controversies = [
+        {
+            "id": str(uuid.uuid4()),
+            "topic": "示例争议主题",
+            "pro_view": "正方观点示例",
+            "pro_evidence": "正方证据示例",
+            "con_view": "反方观点示例",
+            "con_evidence": "反方证据示例",
+            "confidence": 0.85
+        }
+    ]
+    
+    # 保存到数据库
+    now = int(datetime.now().timestamp() * 1000)
+    with get_db() as conn:
+        for c in controversies:
+            conn.execute("""
+                INSERT OR REPLACE INTO controversies 
+                (id, course_id, topic, pro_view, pro_evidence, con_view, con_evidence, confidence, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (c["id"], course_id, c["topic"], c["pro_view"], c["pro_evidence"], 
+                  c["con_view"], c["con_evidence"], c["confidence"], now))
+        conn.commit()
+    
+    # 更新学习进度
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE learning_progress SET q2_completed = 1, updated_at = ? WHERE course_id = ?",
+            (now, course_id)
+        )
+        conn.commit()
+
+@router.get("/controversy/{course_id}")
+async def get_controversies(course_id: str):
+    """获取课程的争议点列表"""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM controversies WHERE course_id = ? ORDER BY created_at DESC",
+            (course_id,)
+        ).fetchall()
+        
+        controversies = []
+        for row in rows:
+            controversies.append({
+                "id": row["id"],
+                "topic": row["topic"],
+                "pro_view": row["pro_view"],
+                "pro_evidence": row["pro_evidence"],
+                "con_view": row["con_view"],
+                "con_evidence": row["con_evidence"],
+                "confidence": row["confidence"]
+            })
+        
+        return {"controversies": controversies}
+
+@router.post("/quiz/generate/{course_id}")
+async def generate_quiz(course_id: str):
+    """第三问：生成测评题目"""
+    
+    with get_db() as conn:
+        # 获取课程资料
+        docs = conn.execute(
+            "SELECT content, title FROM documents WHERE course_id = ? LIMIT 5",
+            (course_id,)
+        ).fetchall()
+        
+        if not docs:
+            return {"quizzes": [], "message": "暂无资料，无法生成测评"}
+    
+    # TODO: 调用 AI 服务生成测评
+    # 示例题目
+    quizzes = [
+        {
+            "id": f"quiz_{course_id}_1",
+            "dimension": "记忆",
+            "bloom_level": "remember",
+            "difficulty": 0.2,
+            "question_type": "single",
+            "question": "这是示例题目，请基于课程内容回答。",
+            "options": ["选项A", "选项B", "选项C", "选项D"],
+            "correct_answer": "A",
+            "explanation": "这是答案解析",
+            "knowledge_points": ["知识点1"]
+        }
+    ]
+    
+    return {"quizzes": quizzes, "total": len(quizzes)}
+
+@router.post("/quiz/submit")
+async def submit_quiz(req: QuizSubmit):
+    """提交测评答案"""
+    
+    # TODO: 实现答案评估
+    # 示例评估
+    evaluation = {
+        "is_correct": True,
+        "score": 100,
+        "feedback": "回答正确！"
+    }
+    
+    # 保存答题记录
+    now = int(datetime.now().timestamp() * 1000)
+    with get_db() as conn:
+        conn.execute("""
+            INSERT INTO quiz_records (id, course_id, question_id, user_answer, is_correct, score, dimension, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (f"record_{req.course_id}_{req.question_id}", req.course_id, 
+              req.question_id, req.user_answer, 1 if evaluation["is_correct"] else 0, 
+              evaluation["score"], "", now))
+        conn.commit()
+    
+    return evaluation
+
+@router.post("/quiz/{course_id}/complete")
+async def complete_quiz(course_id: str):
+    """完成测评，更新进度"""
+    
+    now = int(datetime.now().timestamp() * 1000)
+    with get_db() as conn:
+        # 计算正确率
+        rows = conn.execute(
+            "SELECT COUNT(*) as total, SUM(is_correct) as correct FROM quiz_records WHERE course_id = ?",
+            (course_id,)
+        ).fetchone()
+        
+        total = rows["total"] or 0
+        correct = rows["correct"] or 0
+        accuracy = (correct / total * 100) if total > 0 else 0
+        
+        # 更新进度
+        conn.execute("""
+            UPDATE learning_progress 
+            SET q3_completed = 1, q3_score = ?, overall_progress = 100, updated_at = ?
+            WHERE course_id = ?
+        """, (accuracy, now, course_id))
+        conn.commit()
+    
+    return SuccessResponse(success=True, message="测评完成", data={"accuracy": accuracy})
+
+@router.get("/progress/{course_id}")
+async def get_progress(course_id: str):
+    """获取三问完成进度"""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT q1_completed, q2_completed, q3_completed, overall_progress FROM learning_progress WHERE course_id = ?",
+            (course_id,)
+        ).fetchone()
+        
+        if not row:
+            return {
+                "question1": False,
+                "question2": False,
+                "question3": False,
+                "overall_progress": 0
+            }
+        
+        return {
+            "question1": bool(row["q1_completed"]),
+            "question2": bool(row["q2_completed"]),
+            "question3": bool(row["q3_completed"]),
+            "overall_progress": row["overall_progress"] or 0
+        }
+```
+
+### 14.4 测评中心路由 (backend/routers/quiz.py)
+
+```python
+import uuid
+import json
+from datetime import datetime
+from fastapi import APIRouter, HTTPException
+from typing import List, Optional
+
+from database import get_db
+from models import QuizQuestion, QuizSubmit, QuizComplete, SuccessResponse
+
+router = APIRouter()
+
+@router.get("/{course_id}/questions")
+async def get_questions(course_id: str):
+    """获取测评题目列表"""
+    with get_db() as conn:
+        # 检查是否有已生成的题目
+        rows = conn.execute(
+            "SELECT * FROM quiz_records WHERE course_id = ? GROUP BY question_id",
+            (course_id,)
+        ).fetchall()
+        
+        if rows:
+            # 返回已有的题目记录
+            questions = []
+            for row in rows:
+                questions.append({
+                    "id": row["question_id"],
+                    "dimension": row["dimension"],
+                    "user_answer": row["user_answer"],
+                    "is_correct": bool(row["is_correct"])
+                })
+            return {"questions": questions}
+        
+        # 如果没有题目，生成示例题目
+        questions = generate_sample_questions(course_id)
+        return {"questions": questions}
+
+def generate_sample_questions(course_id: str) -> List[dict]:
+    """生成示例题目"""
+    dimensions = ["记忆", "理解", "应用", "分析", "评价", "创造"]
+    questions = []
+    
+    for i, dim in enumerate(dimensions):
+        question = {
+            "id": f"{course_id}_{dim}",
+            "courseId": course_id,
+            "bloomLevel": dim,
+            "type": "single",
+            "difficulty": i + 1,
+            "content": f"这是{dim}层级的示例题目。请基于学习内容回答。",
+            "options": ["选项A", "选项B", "选项C", "选项D"],
+            "correctAnswer": "A",
+            "explanation": f"这是{dim}层级的答案解析。",
+            "知识点": ["示例知识点"],
+            "userAnswer": None,
+            "isCorrect": None,
+            "isMarked": False
+        }
+        questions.append(question)
+    
+    return questions
+
+@router.get("/{course_id}/list")
+async def list_questions(course_id: str):
+    """按认知层级分组获取题目列表"""
+    questions = generate_sample_questions(course_id)
+    
+    # 按维度分组
+    grouped = {}
+    for q in questions:
+        dim = q["bloomLevel"]
+        if dim not in grouped:
+            grouped[dim] = []
+        grouped[dim].append(q)
+    
+    return {
+        "grouped_questions": grouped,
+        "total": len(questions)
+    }
+
+@router.post("/submit")
+async def submit_answer(req: QuizSubmit):
+    """提交单题答案"""
+    
+    # 评估答案（简化版）
+    is_correct = req.user_answer.upper() == "A"
+    score = 100 if is_correct else 0
+    
+    # 保存记录
+    now = int(datetime.now().timestamp() * 1000)
+    with get_db() as conn:
+        conn.execute("""
+            INSERT OR REPLACE INTO quiz_records 
+            (id, course_id, question_id, user_answer, is_correct, score, dimension, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (f"{req.course_id}_{req.question_id}", req.course_id, 
+              req.question_id, req.user_answer, 1 if is_correct else 0, 
+              score, "", now))
+        conn.commit()
+    
+    return {
+        "is_correct": is_correct,
+        "score": score,
+        "explanation": "这是答案解析示例。正确答案是A。",
+        "feedback": "回答正确！" if is_correct else "回答错误，正确答案是A。"
+    }
+
+@router.post("/{course_id}/complete")
+async def complete_quiz(course_id: str, req: QuizComplete):
+    """完成测评，生成报告"""
+    
+    # 计算统计数据
+    total = len(req.answers)
+    correct = sum(1 for a in req.answers if a.get("is_correct", False))
+    accuracy = (correct / total * 100) if total > 0 else 0
+    
+    # 计算各维度得分
+    ability_scores = {
+        "remember": 0, "understand": 0, "apply": 0,
+        "analyze": 0, "evaluate": 0, "create": 0
+    }
+    
+    for answer in req.answers:
+        dim = answer.get("dimension", "understand")
+        if dim in ability_scores and answer.get("is_correct", False):
+            ability_scores[dim] += 100 / 2  # 每个维度2题
+    
+    # 保存测评记录
+    now = int(datetime.now().timestamp() * 1000)
+    with get_db() as conn:
+        conn.execute("""
+            UPDATE learning_progress 
+            SET q3_completed = 1, q3_score = ?,
+                ability_remember = ?, ability_understand = ?, ability_apply = ?,
+                ability_analyze = ?, ability_evaluate = ?, ability_create = ?,
+                overall_progress = 100, updated_at = ?
+            WHERE course_id = ?
+        """, (accuracy, ability_scores["remember"], ability_scores["understand"],
+              ability_scores["apply"], ability_scores["analyze"], ability_scores["evaluate"],
+              ability_scores["create"], now, course_id))
+        conn.commit()
+    
+    # 收集错题
+    mistakes = []
+    for answer in req.answers:
+        if not answer.get("is_correct", False):
+            mistakes.append({
+                "question": answer.get("content", ""),
+                "user_answer": answer.get("user_answer", ""),
+                "correct_answer": answer.get("correct_answer", ""),
+                "explanation": answer.get("explanation", "")
+            })
+    
+    # 找出薄弱环节
+    weak_areas = [dim for dim, score in ability_scores.items() if score < 60]
+    
+    # 维度名称映射
+    dim_names = {
+        "remember": "记忆", "understand": "理解", "apply": "应用",
+        "analyze": "分析", "evaluate": "评价", "create": "创造"
+    }
+    weak_names = [dim_names.get(w, w) for w in weak_areas]
+    
+    return {
+        "accuracy": accuracy,
+        "totalQuestions": total,
+        "correctCount": correct,
+        "abilityScores": ability_scores,
+        "mistakes": mistakes,
+        "suggestions": {
+            "weakAreas": weak_names,
+            "studyTips": f"建议加强{', '.join(weak_names)}维度的学习" if weak_names else "整体表现良好，继续保持"
+        },
+        "totalTime": sum(a.get("timeSpent", 0) for a in req.answers),
+        "averageTime": sum(a.get("timeSpent", 0) for a in req.answers) / total if total > 0 else 0
+    }
+
+@router.get("/{course_id}/report")
+async def get_report(course_id: str):
+    """获取测评报告"""
+    with get_db() as conn:
+        # 获取进度数据
+        progress = conn.execute(
+            "SELECT * FROM learning_progress WHERE course_id = ?",
+            (course_id,)
+        ).fetchone()
+        
+        if not progress:
+            raise HTTPException(404, "暂无测评报告")
+        
+        # 获取错题记录
+        mistakes_rows = conn.execute(
+            "SELECT * FROM quiz_records WHERE course_id = ? AND is_correct = 0",
+            (course_id,)
+        ).fetchall()
+        
+        mistakes = []
+        for row in mistakes_rows:
+            mistakes.append({
+                "question": row["question_id"],
+                "user_answer": row["user_answer"],
+                "correct_answer": "A",
+                "explanation": "示例解析"
+            })
+        
+        ability_scores = {
+            "remember": progress["ability_remember"] or 0,
+            "understand": progress["ability_understand"] or 0,
+            "apply": progress["ability_apply"] or 0,
+            "analyze": progress["ability_analyze"] or 0,
+            "evaluate": progress["ability_evaluate"] or 0,
+            "create": progress["ability_create"] or 0
+        }
+        
+        weak_areas = [dim for dim, score in ability_scores.items() if score < 60]
+        dim_names = {
+            "remember": "记忆", "understand": "理解", "apply": "应用",
+            "analyze": "分析", "evaluate": "评价", "create": "创造"
+        }
+        
+        return {
+            "accuracy": progress["q3_score"] or 0,
+            "totalQuestions": 12,
+            "correctCount": int((progress["q3_score"] or 0) / 100 * 12),
+            "abilityScores": ability_scores,
+            "mistakes": mistakes,
+            "suggestions": {
+                "weakAreas": [dim_names.get(w, w) for w in weak_areas],
+                "studyTips": f"建议加强{', '.join([dim_names.get(w, w) for w in weak_areas])}维度的学习" if weak_areas else "整体表现良好，继续保持"
+            }
+        }
+
+@router.post("/mark")
+async def mark_question(question_id: str, course_id: str, marked: bool = True):
+    """标记/取消标记题目"""
+    # TODO: 实现标记功能
+    return SuccessResponse(success=True, message=f"题目已{'标记' if marked else '取消标记'}")
+```
+
+### 14.5 SSE实时推送路由 (backend/routers/sse.py)
+
+```python
+import asyncio
+import json
+from fastapi import APIRouter
+from sse_starlette.sse import EventSourceResponse
+from typing import Dict, Any
+
+router = APIRouter()
+
+# 存储每个课程的 SSE 事件队列
+event_queues: Dict[str, asyncio.Queue] = {}
+
+def get_queue(course_id: str) -> asyncio.Queue:
+    """获取或创建课程的事件队列"""
+    if course_id not in event_queues:
+        event_queues[course_id] = asyncio.Queue()
+    return event_queues[course_id]
+
+def push_event(course_id: str, event_type: str, data: Any):
+    """向指定课程推送 SSE 事件"""
+    queue = get_queue(course_id)
+    queue.put_nowait({
+        "event": event_type,
+        "data": json.dumps(data, ensure_ascii=False)
+    })
+
+@router.get("/stream/{course_id}")
+async def sse_stream(course_id: str):
+    """
+    SSE 实时推送流
+    事件类型：
+    - graph_updated: 知识图谱更新
+    - controversy_ready: 争议分析完成
+    - quiz_ready: 测评生成完成
+    - progress: 进度更新
+    - notification: 一般通知
+    """
+    
+    queue = get_queue(course_id)
+    
+    async def event_generator():
+        try:
+            while True:
+                # 等待新事件
+                event = await queue.get()
+                yield event
+        except asyncio.CancelledError:
+            # 连接断开，清理队列
+            if course_id in event_queues:
+                del event_queues[course_id]
+    
+    return EventSourceResponse(event_generator())
+
+@router.post("/push/{course_id}")
+async def push_test_event(course_id: str, event_type: str, message: str):
+    """测试推送事件（开发用）"""
+    push_event(course_id, event_type, {"message": message})
+    return {"status": "ok", "message": f"事件已推送到课程 {course_id}"}
+```
+
+### 14.6 路由模块汇总
+
+| 文件 | 路由前缀 | 功能 |
+|------|---------|------|
+| courses.py | /api/courses | 课程CRUD、三问进度管理 |
+| knowledge.py | /api/knowledge | 资料上传、AI检索、语义搜索 |
+| three_ask.py | /api/three-ask | 知识图谱、争议检测、测评生成 |
+| quiz.py | /api/quiz | 题目获取、答案提交、报告生成 |
+| sse.py | /api/sse | 实时事件推送流 |
+
+### 14.7 路由验证方法
+
+```bash
+cd backend
+python main.py
+# 访问 http://localhost:8000/docs 查看所有 API 端点
+```
+
+---
+
+## 十三、后端基础层（Backend Foundation Layer）
+
+### 13.1 依赖配置 (backend/requirements.txt)
+
+```
+# FastAPI 核心
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+
+# 数据库
+sqlalchemy==2.0.23
+aiosqlite==0.19.0
+
+# AI 相关
+openai==1.3.0
+sentence-transformers==2.2.2
+transformers==4.36.0
+torch==2.1.0
+
+# PDF/Word 解析
+pypdf==3.17.1
+python-docx==1.1.0
+markdown==3.5.1
+
+# 向量数据库
+chromadb==0.4.22
+
+# 网络请求
+httpx==0.25.1
+aiohttp==3.9.1
+beautifulsoup4==4.12.2
+
+# 工具
+python-dotenv==1.0.0
+pydantic==2.5.0
+pydantic-settings==2.1.0
+```
+
+### 13.2 环境变量配置 (backend/.env.example)
+
+```
+# MiniMax API 配置
+MINIMAX_API_KEY=your_api_key_here
+MINIMAX_API_HOST=https://api.minimaxi.com
+
+# 本地存储路径
+DATA_DIR=./data
+UPLOAD_DIR=./data/uploads
+CHROMA_DIR=./data/chroma
+
+# 模型配置
+LLM_MODEL=MiniMax-M2.7
+EMBEDDING_MODEL=BAAI/bge-large-zh-v1.5
+EMBEDDING_DIMENSION=1024
+
+# 服务配置
+BACKEND_PORT=8000
+FRONTEND_URL=http://localhost:5173
+```
+
+### 13.3 数据库层 (backend/database.py)
+
+```python
+import sqlite3
+import os
+from contextlib import contextmanager
+from pathlib import Path
+from datetime import datetime
+
+# 数据库路径
+DATA_DIR = Path("./data")
+DB_PATH = DATA_DIR / "courses.db"
+
+def ensure_data_dir():
+    """确保数据目录存在"""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    (DATA_DIR / "uploads").mkdir(exist_ok=True)
+    (DATA_DIR / "chroma").mkdir(exist_ok=True)
+
+@contextmanager
+def get_db():
+    """获取数据库连接（上下文管理器）"""
+    conn = sqlite3.connect(str(DB_PATH))
+    conn.row_factory = sqlite3.Row
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+def init_db():
+    """初始化数据库：创建所有表"""
+    ensure_data_dir()
+    
+    with get_db() as conn:
+        # 课程表
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS courses (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                keywords TEXT,
+                original_question TEXT,
+                status TEXT DEFAULT 'active',
+                created_at INTEGER,
+                updated_at INTEGER
+            )
+        """)
+        
+        # 资料表
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS documents (
+                id TEXT PRIMARY KEY,
+                course_id TEXT NOT NULL,
+                title TEXT,
+                content TEXT,
+                file_path TEXT,
+                file_type TEXT,
+                source TEXT,
+                created_at INTEGER,
+                FOREIGN KEY (course_id) REFERENCES courses(id)
+            )
+        """)
+        
+        # 学习进度表
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS learning_progress (
+                id TEXT PRIMARY KEY,
+                course_id TEXT NOT NULL,
+                q1_completed INTEGER DEFAULT 0,
+                q2_completed INTEGER DEFAULT 0,
+                q3_completed INTEGER DEFAULT 0,
+                q3_score REAL,
+                ability_remember REAL DEFAULT 0,
+                ability_understand REAL DEFAULT 0,
+                ability_apply REAL DEFAULT 0,
+                ability_analyze REAL DEFAULT 0,
+                ability_evaluate REAL DEFAULT 0,
+                ability_create REAL DEFAULT 0,
+                total_minutes INTEGER DEFAULT 0,
+                session_count INTEGER DEFAULT 0,
+                last_activity INTEGER,
+                overall_progress INTEGER DEFAULT 0,
+                created_at INTEGER,
+                updated_at INTEGER,
+                FOREIGN KEY (course_id) REFERENCES courses(id)
+            )
+        """)
+        
+        # 学习事件表
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS learning_events (
+                id TEXT PRIMARY KEY,
+                course_id TEXT NOT NULL,
+                event_type TEXT,
+                duration INTEGER,
+                metadata TEXT,
+                created_at INTEGER,
+                FOREIGN KEY (course_id) REFERENCES courses(id)
+            )
+        """)
+        
+        # 测评记录表
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS quiz_records (
+                id TEXT PRIMARY KEY,
+                course_id TEXT NOT NULL,
+                question_id TEXT,
+                user_answer TEXT,
+                is_correct INTEGER,
+                score REAL,
+                dimension TEXT,
+                created_at INTEGER,
+                FOREIGN KEY (course_id) REFERENCES courses(id)
+            )
+        """)
+        
+        # 争议点表
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS controversies (
+                id TEXT PRIMARY KEY,
+                course_id TEXT NOT NULL,
+                topic TEXT NOT NULL,
+                pro_view TEXT,
+                pro_evidence TEXT,
+                con_view TEXT,
+                con_evidence TEXT,
+                confidence REAL,
+                created_at INTEGER,
+                FOREIGN KEY (course_id) REFERENCES courses(id)
+            )
+        """)
+        
+        # 讨论帖子表
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS discussion_posts (
+                id TEXT PRIMARY KEY,
+                course_id TEXT NOT NULL,
+                controversy_id TEXT,
+                content TEXT NOT NULL,
+                author TEXT DEFAULT '用户',
+                likes INTEGER DEFAULT 0,
+                created_at INTEGER,
+                FOREIGN KEY (course_id) REFERENCES courses(id)
+            )
+        """)
+        
+        # 讨论回复表
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS discussion_replies (
+                id TEXT PRIMARY KEY,
+                post_id TEXT NOT NULL,
+                content TEXT NOT NULL,
+                author TEXT DEFAULT '用户',
+                created_at INTEGER,
+                FOREIGN KEY (post_id) REFERENCES discussion_posts(id)
+            )
+        """)
+        
+        # 提醒表
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS reminders (
+                id TEXT PRIMARY KEY,
+                course_id TEXT NOT NULL,
+                type TEXT,
+                title TEXT,
+                content TEXT,
+                is_read INTEGER DEFAULT 0,
+                created_at INTEGER,
+                FOREIGN KEY (course_id) REFERENCES courses(id)
+            )
+        """)
+        
+        # 知识图谱缓存表
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS knowledge_graphs (
+                course_id TEXT PRIMARY KEY,
+                graph_data TEXT,
+                updated_at INTEGER,
+                FOREIGN KEY (course_id) REFERENCES courses(id)
+            )
+        """)
+        
+        conn.commit()
+        print("✅ 数据库初始化完成")
+
+# 初始化数据库
+if __name__ == "__main__":
+    init_db()
+```
+
+### 13.4 数据模型 (backend/models.py)
+
+```python
+from pydantic import BaseModel, Field
+from typing import Optional, List
+from datetime import datetime
+
+# ============================================
+# 课程相关模型
+# ============================================
+
+class CourseBase(BaseModel):
+    title: str
+    keywords: Optional[str] = None
+    original_question: Optional[str] = None
+    status: str = "active"
+
+class CourseCreate(BaseModel):
+    question: str
+
+class CourseResponse(BaseModel):
+    id: str
+    title: str
+    keywords: List[str] = []
+    original_question: Optional[str] = None
+    status: str
+    progress: int = 0
+    three_ask_progress: dict = {}
+    created_at: int
+    last_accessed: int
+
+class CourseUpdateStatus(BaseModel):
+    status: str
+
+class CourseUpdateProgress(BaseModel):
+    progress: int
+
+# ============================================
+# 知识库相关模型
+# ============================================
+
+class DocumentUpload(BaseModel):
+    course_id: str
+    title: str
+    content: str
+    source: str = "user"
+
+class DocumentResponse(BaseModel):
+    id: str
+    course_id: str
+    title: str
+    content: Optional[str] = None
+    file_path: Optional[str] = None
+    file_type: Optional[str] = None
+    source: str
+    created_at: int
+
+class SearchRequest(BaseModel):
+    course_id: str
+    query: str
+    top_k: int = 5
+
+class SearchResult(BaseModel):
+    content: str
+    score: float
+    metadata: dict
+
+# ============================================
+# 三问引擎相关模型
+# ============================================
+
+class GraphNode(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = None
+    bloom_level: str = "understand"
+    difficulty: float = 0.5
+    is_threshold_concept: bool = False
+    x: Optional[float] = None
+    y: Optional[float] = None
+
+class GraphLink(BaseModel):
+    source: str
+    target: str
+    relation: str = "related"
+    strength: float = 0.5
+
+class KnowledgeGraph(BaseModel):
+    nodes: List[GraphNode]
+    links: List[GraphLink]
+
+class Controversy(BaseModel):
+    id: str
+    topic: str
+    pro_view: str
+    pro_evidence: str
+    con_view: str
+    con_evidence: str
+    confidence: float
+
+class QuizQuestion(BaseModel):
+    id: str
+    dimension: str
+    bloom_level: str
+    difficulty: float
+    question_type: str
+    question: str
+    options: Optional[List[str]] = None
+    correct_answer: str
+    explanation: Optional[str] = None
+    knowledge_points: List[str] = []
+
+class QuizSubmit(BaseModel):
+    course_id: str
+    question_id: str
+    user_answer: str
+    time_spent: int = 0
+
+class QuizComplete(BaseModel):
+    course_id: str
+    answers: List[dict]
+
+# ============================================
+# 进度追踪相关模型
+# ============================================
+
+class LearningEvent(BaseModel):
+    course_id: str
+    event_type: str
+    duration: int = 0
+    metadata: Optional[dict] = None
+
+class ProgressResponse(BaseModel):
+    course_id: str
+    overall_progress: int
+    three_ask: dict
+    abilities: dict
+    statistics: dict
+
+class RadarData(BaseModel):
+    dimensions: List[dict]
+    values: List[float]
+    average: float
+    strongest: str
+    weakest: str
+
+# ============================================
+# 通用响应模型
+# ============================================
+
+class SuccessResponse(BaseModel):
+    success: bool
+    message: Optional[str] = None
+    data: Optional[dict] = None
+
+class ErrorResponse(BaseModel):
+    error: str
+    detail: Optional[str] = None
+```
+
+### 13.5 主入口 (backend/main.py)
+
+```python
+import os
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
+
+# 加载环境变量
+load_dotenv()
+
+# 初始化数据库
+from database import init_db
+init_db()
+
+# 创建 FastAPI 应用
+app = FastAPI(
+    title="三问高效学习机 API",
+    description="AI驱动的个性化学习工具后端",
+    version="1.0.0"
+)
+
+# CORS 配置
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:3000",
+        os.getenv("FRONTEND_URL", "http://localhost:5173")
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ============================================
+# 导入路由
+# ============================================
+
+from routers import courses, knowledge, three_ask, quiz, sse
+
+app.include_router(courses.router, prefix="/api/courses", tags=["课程管理"])
+app.include_router(knowledge.router, prefix="/api/knowledge", tags=["知识库"])
+app.include_router(three_ask.router, prefix="/api/three-ask", tags=["三问引擎"])
+app.include_router(quiz.router, prefix="/api/quiz", tags=["测评中心"])
+app.include_router(sse.router, prefix="/api/sse", tags=["实时推送"])
+
+# ============================================
+# 健康检查
+# ============================================
+
+@app.get("/api/health", tags=["系统"])
+async def health_check():
+    return {"status": "ok", "message": "三问高效学习机后端运行中"}
+
+@app.get("/", tags=["系统"])
+async def root():
+    return {
+        "name": "三问高效学习机 API",
+        "version": "1.0.0",
+        "docs": "/docs"
+    }
+
+# ============================================
+# 启动入口
+# ============================================
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("BACKEND_PORT", 8000))
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=port,
+        reload=True
+    )
+```
+
+### 13.6 后端目录结构
+
+```
+backend/
+├── requirements.txt      # Python 依赖
+├── .env.example         # 环境变量模板
+├── database.py          # 数据库层
+├── models.py           # Pydantic 数据模型
+├── main.py             # FastAPI 主入口
+├── routers/           # 路由模块
+│   ├── __init__.py
+│   ├── courses.py     # 课程管理路由
+│   ├── knowledge.py   # 知识库路由
+│   ├── three_ask.py   # 三问引擎路由
+│   ├── quiz.py        # 测评中心路由
+│   └── sse.py         # SSE实时推送路由
+├── services/          # 业务逻辑层
+│   ├── __init__.py
+│   ├── llm_service.py      # LLM 服务
+│   ├── course_service.py   # 课程服务
+│   ├── knowledge_service.py # 知识库服务
+│   ├── graph_service.py    # 知识图谱服务
+│   ├── controversy_service.py # 争议检测服务
+│   └── quiz_service.py     # 测评服务
+└── utils/             # 工具函数
+    ├── __init__.py
+    ├── file_parser.py  # 文件解析
+    └── embedder.py    # 向量化工具
+```
+
+### 13.7 数据库表结构总览
+
+| 表名 | 说明 | 关联表 |
+|------|------|--------|
+| courses | 课程表 | - |
+| documents | 资料表 | courses |
+| learning_progress | 学习进度表 | courses |
+| learning_events | 学习事件表 | courses |
+| quiz_records | 测评记录表 | courses |
+| controversies | 争议点表 | courses |
+| discussion_posts | 讨论帖子表 | courses |
+| discussion_replies | 讨论回复表 | discussion_posts |
+| reminders | 提醒表 | courses |
+| knowledge_graphs | 知识图谱缓存表 | courses |
+
+---
+
+## 十五、数据库表结构SQL（Database Schema）
+
+### 15.1 数据库Schema (backend/schema.sql)
+
+```sql
+-- ============================================
+-- 三问高效学习机 - 数据库表结构
+-- 数据库: SQLite
+-- ============================================
+
+-- 1. 课程表
+CREATE TABLE IF NOT EXISTS courses (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    keywords TEXT,
+    original_question TEXT,
+    status TEXT DEFAULT 'active',
+    created_at INTEGER,
+    updated_at INTEGER
+);
+
+-- 2. 资料表
+CREATE TABLE IF NOT EXISTS documents (
+    id TEXT PRIMARY KEY,
+    course_id TEXT NOT NULL,
+    title TEXT,
+    content TEXT,
+    file_path TEXT,
+    file_type TEXT,
+    source TEXT,
+    created_at INTEGER,
+    FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
+);
+
+-- 3. 学习进度表
+CREATE TABLE IF NOT EXISTS learning_progress (
+    id TEXT PRIMARY KEY,
+    course_id TEXT NOT NULL,
+    q1_completed INTEGER DEFAULT 0,
+    q2_completed INTEGER DEFAULT 0,
+    q3_completed INTEGER DEFAULT 0,
+    q3_score REAL,
+    ability_remember REAL DEFAULT 0,
+    ability_understand REAL DEFAULT 0,
+    ability_apply REAL DEFAULT 0,
+    ability_analyze REAL DEFAULT 0,
+    ability_evaluate REAL DEFAULT 0,
+    ability_create REAL DEFAULT 0,
+    total_minutes INTEGER DEFAULT 0,
+    session_count INTEGER DEFAULT 0,
+    last_activity INTEGER,
+    overall_progress INTEGER DEFAULT 0,
+    created_at INTEGER,
+    updated_at INTEGER,
+    FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
+);
+
+-- 4. 学习事件表
+CREATE TABLE IF NOT EXISTS learning_events (
+    id TEXT PRIMARY KEY,
+    course_id TEXT NOT NULL,
+    event_type TEXT,
+    duration INTEGER,
+    metadata TEXT,
+    created_at INTEGER,
+    FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
+);
+
+-- 5. 测评记录表
+CREATE TABLE IF NOT EXISTS quiz_records (
+    id TEXT PRIMARY KEY,
+    course_id TEXT NOT NULL,
+    question_id TEXT,
+    user_answer TEXT,
+    is_correct INTEGER,
+    score REAL,
+    dimension TEXT,
+    time_spent INTEGER,
+    created_at INTEGER,
+    FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
+);
+
+-- 6. 争议点表
+CREATE TABLE IF NOT EXISTS controversies (
+    id TEXT PRIMARY KEY,
+    course_id TEXT NOT NULL,
+    topic TEXT NOT NULL,
+    pro_view TEXT,
+    pro_evidence TEXT,
+    con_view TEXT,
+    con_evidence TEXT,
+    confidence REAL,
+    created_at INTEGER,
+    FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
+);
+
+-- 7. 讨论帖子表
+CREATE TABLE IF NOT EXISTS discussion_posts (
+    id TEXT PRIMARY KEY,
+    course_id TEXT NOT NULL,
+    controversy_id TEXT,
+    content TEXT NOT NULL,
+    author TEXT DEFAULT '用户',
+    likes INTEGER DEFAULT 0,
+    created_at INTEGER,
+    FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE,
+    FOREIGN KEY (controversy_id) REFERENCES controversies(id) ON DELETE SET NULL
+);
+
+-- 8. 讨论回复表
+CREATE TABLE IF NOT EXISTS discussion_replies (
+    id TEXT PRIMARY KEY,
+    post_id TEXT NOT NULL,
+    content TEXT NOT NULL,
+    author TEXT DEFAULT '用户',
+    created_at INTEGER,
+    FOREIGN KEY (post_id) REFERENCES discussion_posts(id) ON DELETE CASCADE
+);
+
+-- 9. 提醒表
+CREATE TABLE IF NOT EXISTS reminders (
+    id TEXT PRIMARY KEY,
+    course_id TEXT NOT NULL,
+    type TEXT,
+    title TEXT,
+    content TEXT,
+    is_read INTEGER DEFAULT 0,
+    created_at INTEGER,
+    FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
+);
+
+-- 10. 知识图谱缓存表
+CREATE TABLE IF NOT EXISTS knowledge_graphs (
+    course_id TEXT PRIMARY KEY,
+    graph_data TEXT,
+    updated_at INTEGER,
+    FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
+);
+
+-- 11. 课程标签表
+CREATE TABLE IF NOT EXISTS course_tags (
+    id TEXT PRIMARY KEY,
+    course_id TEXT NOT NULL,
+    tag_name TEXT NOT NULL,
+    created_at INTEGER,
+    FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
+);
+
+-- 12. 用户设置表（单用户本地版）
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT,
+    updated_at INTEGER
+);
+
+-- 13. 导出记录表
+CREATE TABLE IF NOT EXISTS export_records (
+    id TEXT PRIMARY KEY,
+    course_id TEXT NOT NULL,
+    format TEXT,
+    file_path TEXT,
+    created_at INTEGER,
+    FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
+);
+
+-- ============================================
+-- 索引（提升查询性能）
+-- ============================================
+
+-- 课程表索引
+CREATE INDEX IF NOT EXISTS idx_courses_status ON courses(status);
+CREATE INDEX IF NOT EXISTS idx_courses_updated_at ON courses(updated_at DESC);
+
+-- 资料表索引
+CREATE INDEX IF NOT EXISTS idx_documents_course_id ON documents(course_id);
+CREATE INDEX IF NOT EXISTS idx_documents_source ON documents(source);
+
+-- 学习进度索引
+CREATE INDEX IF NOT EXISTS idx_progress_course_id ON learning_progress(course_id);
+
+-- 学习事件索引
+CREATE INDEX IF NOT EXISTS idx_events_course_id ON learning_events(course_id);
+CREATE INDEX IF NOT EXISTS idx_events_created_at ON learning_events(created_at DESC);
+
+-- 测评记录索引
+CREATE INDEX IF NOT EXISTS idx_quiz_course_id ON quiz_records(course_id);
+CREATE INDEX IF NOT EXISTS idx_quiz_created_at ON quiz_records(created_at DESC);
+
+-- 讨论索引
+CREATE INDEX IF NOT EXISTS idx_posts_course_id ON discussion_posts(course_id);
+CREATE INDEX IF NOT EXISTS idx_posts_controversy_id ON discussion_posts(controversy_id);
+
+-- 提醒索引
+CREATE INDEX IF NOT EXISTS idx_reminders_course_id ON reminders(course_id);
+CREATE INDEX IF NOT EXISTS idx_reminders_is_read ON reminders(is_read);
+
+-- ============================================
+-- 初始化默认数据
+-- ============================================
+
+-- 插入默认设置
+INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES 
+    ('theme', 'light', unixepoch('subsec')),
+    ('auto_save', '1', unixepoch('subsec')),
+    ('notification_enabled', '1', unixepoch('subsec'));
+```
+
+### 15.2 数据库初始化脚本 (backend/init_db.py)
+
+```python
+#!/usr/bin/env python
+"""
+数据库初始化脚本
+使用方法: python init_db.py
+"""
+
+import sqlite3
+import os
+from pathlib import Path
+from datetime import datetime
+
+# 数据库路径
+DATA_DIR = Path("./data")
+DB_PATH = DATA_DIR / "courses.db"
+
+def init_database():
+    """初始化数据库"""
+    # 确保数据目录存在
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    (DATA_DIR / "uploads").mkdir(exist_ok=True)
+    (DATA_DIR / "chroma").mkdir(exist_ok=True)
+    (DATA_DIR / "exports").mkdir(exist_ok=True)
+    
+    # 读取 schema.sql
+    schema_path = Path(__file__).parent / "schema.sql"
+    
+    if not schema_path.exists():
+        print(f"❌ schema.sql 文件不存在: {schema_path}")
+        return False
+    
+    with open(schema_path, "r", encoding="utf-8") as f:
+        schema_sql = f.read()
+    
+    # 执行 SQL
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+        conn.executescript(schema_sql)
+        conn.commit()
+        conn.close()
+        print(f"✅ 数据库初始化成功: {DB_PATH}")
+        return True
+    except Exception as e:
+        print(f"❌ 数据库初始化失败: {e}")
+        return False
+
+def check_database():
+    """检查数据库状态"""
+    if not DB_PATH.exists():
+        print(f"⚠️ 数据库不存在: {DB_PATH}")
+        return False
+    
+    conn = sqlite3.connect(str(DB_PATH))
+    cursor = conn.cursor()
+    
+    # 获取所有表
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    tables = cursor.fetchall()
+    
+    print(f"\n📊 数据库表列表 ({len(tables)} 个表):")
+    for table in tables:
+        cursor.execute(f"SELECT COUNT(*) FROM {table[0]}")
+        count = cursor.fetchone()[0]
+        print(f"  - {table[0]}: {count} 条记录")
+    
+    conn.close()
+    return True
+
+def reset_database():
+    """重置数据库（删除所有数据）"""
+    if DB_PATH.exists():
+        backup_path = DATA_DIR / f"courses_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+        DB_PATH.rename(backup_path)
+        print(f"📦 已备份原数据库到: {backup_path}")
+    
+    return init_database()
+
+if __name__ == "__main__":
+    import sys
+    
+    if len(sys.argv) > 1 and sys.argv[1] == "--reset":
+        print("⚠️ 正在重置数据库...")
+        reset_database()
+    elif len(sys.argv) > 1 and sys.argv[1] == "--check":
+        check_database()
+    else:
+        init_database()
+        check_database()
+```
+
+### 15.3 验证方法
+
+```bash
+cd backend
+python init_db.py          # 初始化数据库
+python init_db.py --check  # 检查数据库状态
+python init_db.py --reset  # 重置数据库（危险操作）
+```
+
+### 15.4 数据库表结构说明
+
+| 表名 | 说明 | 记录内容 |
+|------|------|---------|
+| courses | 课程表 | 课程基本信息 |
+| documents | 资料表 | 用户上传的文档 |
+| learning_progress | 学习进度表 | 三问完成状态、能力分数 |
+| learning_events | 学习事件表 | 用户行为日志 |
+| quiz_records | 测评记录表 | 答题记录和分数 |
+| controversies | 争议点表 | 学术分歧点 |
+| discussion_posts | 讨论帖子表 | 用户讨论 |
+| discussion_replies | 讨论回复表 | 讨论回复 |
+| reminders | 提醒表 | 学习提醒 |
+| knowledge_graphs | 知识图谱缓存表 | 图谱数据缓存 |
+| course_tags | 课程标签表 | 课程标签 |
+| settings | 用户设置表 | 系统设置 |
+| export_records | 导出记录表 | 导出历史 |
+
+---
+
+## 十六、后端服务层（Backend Service Layer）
+
+### 16.1 LLM服务 (backend/services/llm_service.py)
+
+```python
+import os
+import json
+import httpx
+from typing import Optional, List, Dict, Any
+from dotenv import load_dotenv
+
+load_dotenv()
+
+class LLMService:
+    """MiniMax API 调用服务"""
+    
+    def __init__(self):
+        self.api_key = os.getenv("MINIMAX_API_KEY", "")
+        self.api_host = os.getenv("MINIMAX_API_HOST", "https://api.minimaxi.com")
+        self.model = os.getenv("LLM_MODEL", "MiniMax-M2.7")
+        
+        if not self.api_key:
+            print("⚠️ 警告: MINIMAX_API_KEY 未设置，LLM 功能将不可用")
+    
+    async def chat(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 4096
+    ) -> str:
+        """调用 LLM 进行对话"""
+        
+        if not self.api_key:
+            return self._mock_response(prompt)
+        
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+        
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            try:
+                response = await client.post(
+                    f"{self.api_host}/v1/text/chatcompletion_v2",
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "model": self.model,
+                        "messages": messages,
+                        "temperature": temperature,
+                        "max_tokens": max_tokens
+                    }
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    return data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                else:
+                    print(f"❌ LLM API 错误: {response.status_code}")
+                    return self._mock_response(prompt)
+                    
+            except Exception as e:
+                print(f"❌ LLM 调用失败: {e}")
+                return self._mock_response(prompt)
+    
+    def _mock_response(self, prompt: str) -> str:
+        """模拟响应（当 API 不可用时）"""
+        return f"【模拟响应】收到了你的问题：{prompt[:50]}... 我会基于课程内容为你解答。"
+```
+
+### 16.2 课程服务 (backend/services/course_service.py)
+
+```python
+import uuid
+import json
+from datetime import datetime
+from typing import List, Dict, Optional
+
+class CourseService:
+    """课程管理业务逻辑"""
+    
+    def __init__(self, db_path: str = "./data/courses.db"):
+        self.db_path = db_path
+    
+    def create_course(self, question: str, title: str = None, keywords: List[str] = None) -> Dict:
+        """创建课程"""
+        course_id = str(uuid.uuid4())
+        now = int(datetime.now().timestamp() * 1000)
+        
+        # 生成标题
+        if not title:
+            title = question[:50] if len(question) > 50 else f"课程：{question}"
+        
+        # 生成关键词
+        if not keywords:
+            keywords = ["AI学习", "自适应", "个性化"]
+        
+        return {
+            "id": course_id,
+            "title": title,
+            "keywords": keywords,
+            "original_question": question,
+            "status": "active",
+            "created_at": now,
+            "updated_at": now
+        }
+    
+    def extract_title_from_question(self, question: str) -> str:
+        """从问题中提取标题"""
+        # 简化实现，实际可调用 LLM
+        keywords = ["如何", "怎么", "什么", "为什么", "教程", "学习"]
+        for kw in keywords:
+            if kw in question:
+                return f"关于{question[:30]}的学习"
+        return question[:50]
+    
+    def extract_keywords(self, question: str) -> List[str]:
+        """从问题中提取关键词"""
+        # 简化实现，实际可调用 LLM
+        return ["AI", "学习", "自适应"]
+    
+    def calculate_progress(self, q1: bool, q2: bool, q3: bool, total_minutes: int = 0) -> int:
+        """计算总体进度"""
+        base = 0
+        if q1: base += 33
+        if q2: base += 33
+        if q3: base += 34
+        
+        # 学习时长加成（最多20%）
+        time_bonus = min(total_minutes / 120 * 20, 20) if total_minutes else 0
+        
+        return min(int(base + time_bonus), 100)
+```
+
+### 16.3 知识库服务 (backend/services/knowledge_service.py)
+
+```python
+import uuid
+import os
+from datetime import datetime
+from typing import List, Dict, Optional
+from pathlib import Path
+
+class KnowledgeService:
+    """知识库管理业务逻辑"""
+    
+    def __init__(self, db_path: str = "./data/courses.db", chroma_dir: str = "./data/chroma"):
+        self.db_path = db_path
+        self.chroma_dir = chroma_dir
+        self.embedder = None  # 延迟初始化
+    
+    async def add_document(self, course_id: str, title: str, content: str, source: str = "user") -> Dict:
+        """添加文档到知识库"""
+        doc_id = str(uuid.uuid4())
+        now = int(datetime.now().timestamp() * 1000)
+        
+        # 向量化
+        embedding = await self._get_embedding(content)
+        
+        return {
+            "id": doc_id,
+            "course_id": course_id,
+            "title": title,
+            "content": content,
+            "source": source,
+            "created_at": now,
+            "embedding": embedding
+        }
+    
+    async def _get_embedding(self, text: str) -> List[float]:
+        """获取文本向量（调用 Embedding 服务）"""
+        # TODO: 实现真实的向量化
+        return [0.0] * 1024  # 占位符
+    
+    async def semantic_search(self, course_id: str, query: str, top_k: int = 5) -> List[Dict]:
+        """语义检索"""
+        query_embedding = await self._get_embedding(query)
+        
+        # TODO: 实现基于向量的相似度搜索
+        return [
+            {
+                "content": "检索结果示例内容",
+                "score": 0.95,
+                "metadata": {"title": "示例文档", "source": "AI补充"}
+            }
+        ]
+```
+
+### 16.4 知识图谱服务 (backend/services/graph_service.py)
+
+```python
+import json
+from typing import List, Dict, Optional
+
+class GraphService:
+    """知识图谱生成与管理"""
+    
+    def __init__(self, llm_service=None):
+        self.llm = llm_service
+    
+    async def generate_graph(self, course_id: str, documents: List[Dict]) -> Dict:
+        """生成知识图谱"""
+        if not documents:
+            return {"nodes": [], "links": []}
+        
+        # 合并文档内容
+        combined_text = "\n\n".join([doc.get("content", "")[:2000] for doc in documents[:5]])
+        
+        # 调用 LLM 生成图谱
+        if self.llm:
+            prompt = f"""
+基于以下学习资料，生成一个知识图谱，包含核心概念及其关系。
+
+学习资料：
+{combined_text[:4000]}
+
+请生成包含以下结构的JSON：
+{{
+  "nodes": [
+    {{"id": "node1", "name": "核心概念", "description": "描述", "bloom_level": "understand", "difficulty": 0.5, "is_threshold_concept": true}}
+  ],
+  "links": [
+    {{"source": "node1", "target": "node2", "relation": "related", "strength": 0.8}}
+  ]
+}}
+"""
+            result = await self.llm.chat(prompt)
+            try:
+                return json.loads(result)
+            except:
+                pass
+        
+        # 返回示例数据
+        return {
+            "nodes": [
+                {"id": "concept1", "name": "核心概念", "description": "这是核心概念", "bloom_level": "understand", "difficulty": 0.5, "is_threshold_concept": True},
+                {"id": "concept2", "name": "相关概念", "description": "这是相关概念", "bloom_level": "remember", "difficulty": 0.3, "is_threshold_concept": False}
+            ],
+            "links": [
+                {"source": "concept1", "target": "concept2", "relation": "related", "strength": 0.8}
+            ]
+        }
+    
+    def update_graph_incremental(self, existing_graph: Dict, new_document: Dict) -> Dict:
+        """增量更新图谱"""
+        # TODO: 实现增量更新逻辑
+        return existing_graph
+```
+
+### 16.5 争议检测服务 (backend/services/controversy_service.py)
+
+```python
+import uuid
+from typing import List, Dict
+
+class ControversyService:
+    """学术争议检测服务"""
+    
+    def __init__(self, llm_service=None):
+        self.llm = llm_service
+    
+    async def detect_controversies(self, course_id: str, documents: List[Dict]) -> List[Dict]:
+        """检测学术争议点"""
+        if len(documents) < 2:
+            return []
+        
+        # 提取观点
+        views = await self._extract_views(documents)
+        
+        # 检测矛盾
+        contradictions = await self._detect_contradictions(views)
+        
+        # 生成争议点
+        controversies = []
+        for pair in contradictions:
+            c = await self._generate_controversy(views[pair["view1_idx"]], views[pair["view2_idx"]])
+            if c:
+                controversies.append(c)
+        
+        return controversies
+    
+    async def _extract_views(self, documents: List[Dict]) -> List[Dict]:
+        """从文档中提取观点"""
+        views = []
+        for doc in documents:
+            # TODO: 调用 LLM 提取观点
+            views.append({
+                "view": f"关于{doc.get('title', '未知')}的观点",
+                "evidence": "支持证据",
+                "source": doc.get("title", "未知")
+            })
+        return views
+    
+    async def _detect_contradictions(self, views: List[Dict]) -> List[Dict]:
+        """检测观点间的矛盾"""
+        # TODO: 实现 NLI 模型检测
+        return []
+    
+    async def _generate_controversy(self, view1: Dict, view2: Dict) -> Optional[Dict]:
+        """生成争议点"""
+        if not self.llm:
+            return None
+        
+        prompt = f"""
+分析以下两个观点，生成一个学术争议点。
+
+正方观点：{view1['view']}
+证据：{view1['evidence']}
+
+反方观点：{view2['view']}
+证据：{view2['evidence']}
+
+请生成包含以下字段的JSON：
+{{
+  "topic": "争议主题",
+  "pro_view": "正方核心观点",
+  "pro_evidence": "正方证据",
+  "con_view": "反方核心观点",
+  "con_evidence": "反方证据",
+  "confidence": 0.85
+}}
+"""
+        try:
+            result = await self.llm.chat(prompt)
+            return json.loads(result)
+        except:
+            return None
+```
+
+### 16.6 测评服务 (backend/services/quiz_service.py)
+
+```python
+import json
+from typing import List, Dict
+
+class QuizService:
+    """测评题目生成与评估"""
+    
+    # Bloom 认知层级难度系数
+    DIFFICULTIES = {
+        "remember": 0.2,
+        "understand": 0.4,
+        "apply": 0.6,
+        "analyze": 0.75,
+        "evaluate": 0.85,
+        "create": 0.95
+    }
+    
+    # 各维度题型
+    QUESTION_TYPES = {
+        "remember": ["multiple_choice", "fill_blank"],
+        "understand": ["short_answer", "explanation"],
+        "apply": ["coding", "calculation"],
+        "analyze": ["case_study", "analysis"],
+        "evaluate": ["essay", "discussion"],
+        "create": ["project_design", "innovation"]
+    }
+    
+    def __init__(self, llm_service=None):
+        self.llm = llm_service
+    
+    async def generate_quiz(self, course_id: str, documents: List[Dict], questions_per_level: int = 2) -> List[Dict]:
+        """生成测评题目"""
+        combined_text = "\n\n".join([doc.get("content", "")[:2000] for doc in documents[:5]])
+        
+        quizzes = []
+        for dimension, difficulty in self.DIFFICULTIES.items():
+            for i in range(questions_per_level):
+                question = await self._generate_question(dimension, difficulty, combined_text, i + 1)
+                if question:
+                    quizzes.append(question)
+        
+        return quizzes
+    
+    async def _generate_question(self, dimension: str, difficulty: float, context: str, question_num: int = 1) -> Optional[Dict]:
+        """生成单道题目"""
+        if not self.llm:
+            return self._mock_question(dimension, difficulty, question_num)
+        
+        prompt = f"""
+基于以下学习资料，为"{dimension}"认知层级生成第{question_num}道测评题目。
+
+要求：
+- 难度系数: {difficulty}
+- 题型: {self.QUESTION_TYPES[dimension]}
+
+学习资料：
+{context[:4000]}
+
+请生成包含以下字段的JSON：
+{{
+  "id": "question_{dimension}_{question_num}",
+  "dimension": "{dimension}",
+  "bloom_level": "{dimension}",
+  "difficulty": {difficulty},
+  "question_type": "{self.QUESTION_TYPES[dimension][0]}",
+  "question": "题目内容",
+  "options": ["A. 选项1", "B. 选项2", "C. 选项3", "D. 选项4"],
+  "correct_answer": "A",
+  "explanation": "答案解析",
+  "knowledge_points": ["知识点1", "知识点2"]
+}}
+"""
+        try:
+            result = await self.llm.chat(prompt)
+            return json.loads(result)
+        except:
+            return self._mock_question(dimension, difficulty, question_num)
+    
+    def _mock_question(self, dimension: str, difficulty: float, question_num: int) -> Dict:
+        """生成模拟题目"""
+        return {
+            "id": f"question_{dimension}_{question_num}",
+            "dimension": dimension,
+            "bloom_level": dimension,
+            "difficulty": difficulty,
+            "question_type": self.QUESTION_TYPES[dimension][0],
+            "question": f"这是{dimension}层级的示例题目（第{question_num}题）。",
+            "options": ["选项A", "选项B", "选项C", "选项D"],
+            "correct_answer": "A",
+            "explanation": f"这是{dimension}层级的答案解析。",
+            "knowledge_points": ["知识点1"]
+        }
+    
+    async def evaluate_answer(self, question: Dict, user_answer: str) -> Dict:
+        """评估答案"""
+        correct = question.get("correct_answer", "").strip().upper()
+        user = user_answer.strip().upper()
+        
+        if question.get("question_type") in ["multiple_choice", "fill_blank"]:
+            is_correct = user == correct.upper()
+            return {
+                "is_correct": is_correct,
+                "score": 100 if is_correct else 0,
+                "feedback": "回答正确！" if is_correct else f"正确答案：{correct}"
+            }
+        else:
+            # 主观题使用 LLM 评估
+            if self.llm:
+                return await self._llm_evaluate(question, user_answer)
+            return {"is_correct": False, "score": 0, "feedback": "评分失败"}
+    
+    async def _llm_evaluate(self, question: Dict, user_answer: str) -> Dict:
+        """LLM 评估主观题"""
+        prompt = f"""
+评估以下回答：
+
+题目：{question['question']}
+正确答案：{question.get('correct_answer', '无标准答案')}
+用户回答：{user_answer}
+
+请评估并输出JSON：
+{{"score": 85, "is_correct": true, "feedback": "评估反馈"}}
+"""
+        try:
+            result = await self.llm.chat(prompt)
+            return json.loads(result)
+        except:
+            return {"is_correct": False, "score": 0, "feedback": "评分异常"}
+    
+    def calculate_ability_scores(self, quiz_results: List[Dict]) -> Dict:
+        """计算能力维度得分"""
+        scores = {dim: [] for dim in self.DIFFICULTIES.keys()}
+        
+        for result in quiz_results:
+            dim = result.get("dimension", "remember")
+            if dim in scores and result.get("is_correct"):
+                scores[dim].append(100)
+        
+        ability_scores = {}
+        for dim, score_list in scores.items():
+            ability_scores[dim] = sum(score_list) / len(score_list) if score_list else 0
+        
+        return ability_scores
+```
+
+### 16.7 服务层汇总
+
+| 服务文件 | 核心方法 | 功能 |
+|---------|---------|------|
+| llm_service.py | chat() | MiniMax API 调用 |
+| course_service.py | create_course(), calculate_progress() | 课程业务逻辑 |
+| knowledge_service.py | add_document(), semantic_search() | 知识库管理 |
+| graph_service.py | generate_graph(), update_graph_incremental() | 知识图谱 |
+| controversy_service.py | detect_controversies() | 争议检测 |
+| quiz_service.py | generate_quiz(), evaluate_answer() | 测评服务 |
