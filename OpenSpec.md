@@ -13265,3 +13265,397 @@ cd scripts
 | 双击即用 | ✅ 是 | ✅ 是 |
 | 用户需装环境 | ❌ 否 | ❌ 否 |
 | 打包体积 | ~150MB | ~180MB |
+
+---
+
+## 二十三、制作实现方案
+
+### 23.1 整体开发流程概览
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        三问高效学习机 - 完整制作流程                       │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  第1步          第2步          第3步          第4步          第5步       │
+│  项目初始化  →  前端开发   →  后端开发   →  联调测试   →  桌面打包       │
+│                                                                         │
+│  输出:         输出:         输出:         输出:         输出:          │
+│  项目骨架      React前端     FastAPI后端   完整功能     Electron桌面应用 │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### 23.2 第1步：项目初始化
+
+#### 23.2.1 创建项目目录结构
+
+```bash
+# 创建主目录
+mkdir sanwen-learning
+cd sanwen-learning
+
+# 创建前端目录
+npm create vite@latest frontend -- --template react-ts
+cd frontend
+npm install
+npm install zustand react-router-dom echarts react-dnd react-dnd-html5-backend
+cd ..
+
+# 创建后端目录
+mkdir backend
+cd backend
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+pip install fastapi uvicorn chromadb sentence-transformers pypdf python-docx python-multipart
+pip freeze > requirements.txt
+cd ..
+
+# 创建桌面应用目录
+mkdir electron
+cd electron
+npm init -y
+npm install electron electron-builder --save-dev
+cd ..
+```
+
+#### 23.2.2 创建 package.json（根目录）
+
+```json
+{
+  "name": "sanwen-learning",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && source venv/bin/activate && python main.py",
+    "build:frontend": "cd frontend && npm run build",
+    "build:electron": "cd electron && npm run build",
+    "install:all": "cd frontend && npm install && cd ../backend && pip install -r requirements.txt && cd ../electron && npm install",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
+```
+
+### 23.3 第2步：前端开发（React + TypeScript）
+
+#### 23.3.1 前端文件清单
+
+| 文件路径 | 说明 | 优先级 |
+|----------|------|--------|
+| frontend/src/main.tsx | 入口文件 | P0 |
+| frontend/src/App.tsx | 根组件 + 路由 | P0 |
+| frontend/src/index.css | 全局样式（含暗黑模式） | P0 |
+| frontend/src/layouts/TabBarLayout.tsx | 底部Tab栏布局 | P0 |
+| frontend/src/pages/Home/index.tsx | 首页 | P0 |
+| frontend/src/pages/LearningSpace/index.tsx | 学习空间 | P0 |
+| frontend/src/pages/QuizCenter/index.tsx | 测评中心 | P0 |
+| frontend/src/pages/QuizPlay/index.tsx | 答题界面 | P0 |
+| frontend/src/pages/QuizReport/index.tsx | 测评报告 | P0 |
+| frontend/src/pages/Profile/index.tsx | 个人中心 | P0 |
+| frontend/src/components/business/KnowledgeGraph.tsx | 知识图谱组件 | P0 |
+| frontend/src/components/business/ControversyPanel.tsx | 争议面板 | P0 |
+| frontend/src/components/business/RadarChart.tsx | 雷达图组件 | P0 |
+| frontend/src/components/business/CourseCard.tsx | 课程卡片 | P0 |
+| frontend/src/components/ui/Icons.tsx | 图标库 | P0 |
+| frontend/src/stores/courseStore.ts | 课程状态管理 | P0 |
+| frontend/src/stores/learningStore.ts | 学习状态管理 | P0 |
+| frontend/src/stores/quizStore.ts | 测评状态管理 | P0 |
+| frontend/src/api/client.ts | API客户端 | P0 |
+| frontend/src/api/courses.ts | 课程API | P0 |
+| frontend/src/api/knowledge.ts | 知识库API | P0 |
+| frontend/src/api/threeAsk.ts | 三问引擎API | P0 |
+| frontend/src/hooks/useSSE.ts | SSE通信Hook | P0 |
+| frontend/src/utils/haptic.ts | 触觉反馈 | P0 |
+| frontend/vite.config.ts | Vite配置 | P0 |
+
+#### 23.3.2 关键配置文件
+
+##### frontend/vite.config.ts
+
+```typescript
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import path from 'path';
+
+export default defineConfig({
+  plugins: [react()],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
+  server: {
+    port: 5173,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+    },
+  },
+});
+```
+
+##### frontend/tailwind.config.js
+
+```javascript
+/** @type {import('tailwindcss').Config} */
+export default {
+  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
+  darkMode: 'class',
+  theme: {
+    extend: {
+      fontFamily: {
+        sans: ['-apple-system', 'BlinkMacSystemFont', 'SF Pro Text', 'Helvetica Neue', 'sans-serif'],
+      },
+    },
+  },
+  plugins: [],
+};
+```
+
+#### 23.3.3 开发命令
+
+```bash
+cd frontend
+npm run dev
+# 访问 http://localhost:5173
+```
+
+### 23.4 第3步：后端开发（Python FastAPI）
+
+#### 23.4.1 后端文件清单
+
+| 文件路径 | 说明 | 优先级 |
+|----------|------|--------|
+| backend/main.py | FastAPI主入口 | P0 |
+| backend/database.py | SQLite数据库 | P0 |
+| backend/models.py | Pydantic模型 | P0 |
+| backend/schema.sql | 数据库表结构 | P0 |
+| backend/init_db.py | 数据库初始化 | P0 |
+| backend/routers/courses.py | 课程路由 | P0 |
+| backend/routers/knowledge.py | 知识库路由 | P0 |
+| backend/routers/three_ask.py | 三问引擎路由 | P0 |
+| backend/routers/quiz.py | 测评路由 | P0 |
+| backend/routers/sse.py | SSE推送路由 | P0 |
+| backend/services/llm_service.py | LLM服务 | P1 |
+| backend/services/embedding_service.py | 向量化服务 | P1 |
+| backend/services/parser_service.py | 文件解析服务 | P1 |
+| backend/services/chroma_client.py | ChromaDB客户端 | P1 |
+| backend/services/graph_service.py | 知识图谱服务 | P1 |
+| backend/services/quiz_service.py | 测评服务 | P1 |
+| backend/services/export_service.py | 导出服务 | P2 |
+| backend/.env.example | 环境变量模板 | P0 |
+| backend/requirements.txt | Python依赖 | P0 |
+
+#### 23.4.2 初始化数据库
+
+```bash
+cd backend
+python -c "from database import init_db; init_db()"
+```
+
+#### 23.4.3 配置环境变量
+
+```bash
+cp backend/.env.example backend/.env
+# 编辑 backend/.env，填入 MINIMAX_API_KEY
+```
+
+#### 23.4.4 启动后端
+
+```bash
+cd backend
+source venv/bin/activate  # Windows: venv\Scripts\activate
+python main.py
+# 访问 http://localhost:8000/docs
+```
+
+### 23.5 第4步：联调测试
+
+#### 23.5.1 同时启动前后端
+
+```bash
+# 终端1 - 后端
+cd backend
+source venv/bin/activate
+python main.py
+
+# 终端2 - 前端
+cd frontend
+npm run dev
+```
+
+#### 23.5.2 测试清单
+
+| 测试项 | 预期结果 |
+|--------|----------|
+| 首页加载 | 显示搜索框和课程列表 |
+| 创建课程 | 2秒内生成课程，跳转学习空间 |
+| 上传资料 | 支持PDF/Word/Markdown |
+| 知识图谱 | ECharts力导向图正常渲染 |
+| 争议挖掘 | 异步分析，SSE推送结果 |
+| 测评生成 | 6维度题目生成 |
+| 暗黑模式 | 手动切换，颜色正确 |
+| SSE推送 | 实时更新图谱 |
+
+### 23.6 第5步：桌面应用打包（Electron + 内嵌 Python）
+
+#### 23.6.1 准备内嵌 Python 运行时
+
+**Windows:**
+
+```bash
+# 下载 Python 3.11 嵌入式版本
+# https://www.python.org/ftp/python/3.11.8/python-3.11.8-embed-amd64.zip
+# 解压到 python-runtime/windows/
+
+# 修改 python311._pth 文件，取消 import site 的注释
+# site-packages 路径配置
+```
+
+**macOS:**
+
+```bash
+# 下载 Python 3.11 安装包
+# 安装后复制 Python.framework 到 python-runtime/mac/
+cp -r /Library/Frameworks/Python.framework/Versions/3.11 python-runtime/mac/
+```
+
+#### 23.6.2 Electron 主进程代码
+
+electron/main.js（详见 OpenSpec 第22节）
+
+**核心功能：**
+- 获取内嵌 Python 路径（双系统适配）
+- 启动 FastAPI 后端服务
+- 加载 React 前端
+- 管理应用生命周期
+
+#### 23.6.3 打包脚本
+
+**Windows 打包 (scripts/build-windows.bat):**
+
+```batch
+@echo off
+echo [1/4] 构建前端...
+cd ../frontend && npm run build
+
+echo [2/4] 准备 Python 运行时...
+if not exist "../python-runtime/windows" exit /b 1
+
+echo [3/4] 安装后端依赖...
+cd ../python-runtime/windows
+.\python.exe -m pip install -r ../../backend/requirements.txt
+
+echo [4/4] 打包 Electron 应用...
+cd ../electron && npm install && npm run build:win
+
+echo 完成！输出目录: electron/dist/
+pause
+```
+
+**macOS 打包 (scripts/build-mac.sh):**
+
+```bash
+#!/bin/bash
+echo "[1/4] 构建前端..."
+cd ../frontend && npm run build
+
+echo "[2/4] 准备 Python 运行时..."
+[ ! -d "../python-runtime/mac" ] && exit 1
+
+echo "[3/4] 安装后端依赖..."
+cd ../python-runtime/mac
+./bin/python3 -m pip install -r ../../backend/requirements.txt
+
+echo "[4/4] 打包 Electron 应用..."
+cd ../electron && npm install && npm run build:mac
+
+echo "完成！输出目录: electron/dist/"
+```
+
+#### 23.6.4 执行打包
+
+```bash
+# Windows
+cd scripts
+build-windows.bat
+
+# macOS
+chmod +x scripts/build-mac.sh
+./scripts/build-mac.sh
+```
+
+#### 23.6.5 打包产物位置
+
+```
+electron/dist/
+├── 三问学习机-Setup-1.0.0.exe    # Windows 安装程序
+├── 三问学习机-Portable-1.0.0.exe # Windows 便携版
+├── 三问学习机-1.0.0.dmg          # macOS 安装镜像
+└── 三问学习机-1.0.0.zip          # macOS 便携版
+```
+
+### 23.7 文件优先级
+
+| 优先级 | 说明 | 文件数量 |
+|--------|------|----------|
+| P0 | 必须实现，否则无法运行 | ~30个 |
+| P1 | 重要功能，影响核心体验 | ~10个 |
+| P2 | 增强功能，可后续迭代 | ~5个 |
+
+### 23.8 快速启动命令汇总
+
+```bash
+# 1. 克隆/创建项目
+mkdir sanwen-learning && cd sanwen-learning
+
+# 2. 安装所有依赖
+npm install -g concurrently
+npm run install:all
+
+# 3. 配置环境变量
+cp backend/.env.example backend/.env
+# 编辑 backend/.env，填入 MINIMAX_API_KEY
+
+# 4. 初始化数据库
+cd backend && python init_db.py && cd ..
+
+# 5. 启动开发服务器
+npm run dev
+
+# 6. 打包桌面应用（可选）
+cd scripts && ./build-windows.bat  # Windows
+# 或
+chmod +x build-mac.sh && ./build-mac.sh  # macOS
+```
+
+### 23.9 验证检查清单
+
+| 检查项 | 验证方法 |
+|--------|----------|
+| 前端启动 | npm run dev 后访问 5173 端口 |
+| 后端启动 | 访问 8000/docs 看到 Swagger |
+| 数据库初始化 | data/courses.db 文件存在 |
+| 创建课程 | 首页输入问题，点击创建 |
+| 上传文件 | 选择 PDF/Word/Markdown 上传 |
+| 知识图谱 | 学习空间看到力导向图 |
+| 争议挖掘 | 点击分析，等待结果 |
+| 测评功能 | 完成测评，看到报告 |
+| 暗黑模式 | 点击切换按钮，颜色变化 |
+| Electron打包 | dist 目录下有 exe/dmg 文件 |
+
+### 23.10 最终交付物
+
+| 交付物 | 说明 |
+|--------|------|
+| 源代码 | 完整的前后端源码 |
+| 配置文件 | .env.example, docker-compose.yml |
+| 启动脚本 | start.bat, start.sh, install.bat, install.sh |
+| 文档 | README.md, API.md, DEPLOY.md, OpenSpec.md |
+| 桌面应用 | Windows Setup.exe + 便携版，macOS .dmg + .app |
