@@ -9478,3 +9478,633 @@ class QuizService:
 | graph_service.py | generate_graph(), update_graph_incremental() | 知识图谱 |
 | controversy_service.py | detect_controversies() | 争议检测 |
 | quiz_service.py | generate_quiz(), evaluate_answer() | 测评服务 |
+
+---
+
+## 十七、前端API层（Frontend API Layer）
+
+### 17.1 API客户端 (src/api/client.ts)
+
+```typescript
+// API 基础配置和请求封装
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+
+export interface ApiResponse<T = any> {
+  success?: boolean;
+  data?: T;
+  message?: string;
+  error?: string;
+  detail?: string;
+}
+
+export interface ApiError {
+  status: number;
+  message: string;
+  detail?: string;
+}
+
+class ApiClient {
+  private baseUrl: string;
+
+  constructor(baseUrl: string) {
+    this.baseUrl = baseUrl;
+  }
+
+  private async request<T>(
+    endpoint: string,
+    options: RequestInit = {}
+  ): Promise<T> {
+    const url = `${this.baseUrl}${endpoint}`;
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    };
+
+    const config: RequestInit = {
+      ...options,
+      headers,
+    };
+
+    try {
+      const response = await fetch(url, config);
+
+      if (!response.ok) {
+        let errorMessage = `HTTP ${response.status}`;
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.detail || errorData.message || errorMessage;
+        } catch {
+          // 忽略 JSON 解析错误
+        }
+        throw { status: response.status, message: errorMessage };
+      }
+
+      // 204 No Content
+      if (response.status === 204) {
+        return {} as T;
+      }
+
+      const data = await response.json();
+      return data as T;
+    } catch (error) {
+      if ((error as ApiError).status) {
+        throw error;
+      }
+      throw { status: 0, message: (error as Error).message || '网络错误' };
+    }
+  }
+
+  get<T>(endpoint: string, params?: Record<string, any>): Promise<T> {
+    let url = endpoint;
+    if (params) {
+      const searchParams = new URLSearchParams();
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          searchParams.append(key, String(value));
+        }
+      });
+      const queryString = searchParams.toString();
+      if (queryString) {
+        url = `${endpoint}?${queryString}`;
+      }
+    }
+    return this.request<T>(url, { method: 'GET' });
+  }
+
+  post<T>(endpoint: string, body?: any): Promise<T> {
+    return this.request<T>(endpoint, {
+      method: 'POST',
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  }
+
+  put<T>(endpoint: string, body?: any): Promise<T> {
+    return this.request<T>(endpoint, {
+      method: 'PUT',
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  }
+
+  patch<T>(endpoint: string, body?: any): Promise<T> {
+    return this.request<T>(endpoint, {
+      method: 'PATCH',
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  }
+
+  delete<T>(endpoint: string): Promise<T> {
+    return this.request<T>(endpoint, { method: 'DELETE' });
+  }
+
+  upload<T>(endpoint: string, formData: FormData, onProgress?: (progress: number) => void): Promise<T> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      const url = `${this.baseUrl}${endpoint}`;
+
+      xhr.open('POST', url);
+
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && onProgress) {
+          const progress = Math.round((event.loaded / event.total) * 100);
+          onProgress(progress);
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            resolve(data as T);
+          } catch {
+            resolve({} as T);
+          }
+        } else {
+          reject({ status: xhr.status, message: xhr.statusText });
+        }
+      };
+
+      xhr.onerror = () => {
+        reject({ status: 0, message: '网络错误' });
+      };
+
+      xhr.send(formData);
+    });
+  }
+}
+
+export const apiClient = new ApiClient(API_BASE_URL);
+```
+
+### 17.2 课程API (src/api/courses.ts)
+
+```typescript
+import { apiClient } from './client';
+
+export interface Course {
+  id: string;
+  title: string;
+  keywords: string[];
+  originalQuestion: string;
+  status: 'active' | 'completed' | 'archived' | 'deleted';
+  progress: number;
+  threeAskProgress: {
+    question1: boolean;
+    question2: boolean;
+    question3: boolean;
+  };
+  createdAt: number;
+  lastAccessed: number;
+}
+
+export interface CreateCourseRequest {
+  question: string;
+}
+
+export interface CreateCourseResponse {
+  id: string;
+  title: string;
+  keywords: string[];
+  originalQuestion: string;
+  status: string;
+  progress: number;
+  threeAskProgress: {
+    question1: boolean;
+    question2: boolean;
+    question3: boolean;
+  };
+  createdAt: number;
+}
+
+export interface CourseListResponse {
+  courses: Course[];
+  total: number;
+}
+
+export const coursesApi = {
+  // 创建课程
+  create: (question: string): Promise<CreateCourseResponse> => {
+    return apiClient.post('/courses/create', { question });
+  },
+
+  // 获取课程列表
+  list: (status?: string, limit: number = 50, offset: number = 0): Promise<CourseListResponse> => {
+    return apiClient.get('/courses/list', { status, limit, offset });
+  },
+
+  // 获取单个课程详情
+  get: (courseId: string): Promise<Course> => {
+    return apiClient.get(`/courses/${courseId}`);
+  },
+
+  // 更新课程状态
+  updateStatus: (courseId: string, status: string): Promise<{ success: boolean; message: string }> => {
+    return apiClient.patch(`/courses/${courseId}/status`, { status });
+  },
+
+  // 更新课程进度
+  updateProgress: (courseId: string, progress: number): Promise<{ success: boolean; message: string }> => {
+    return apiClient.patch(`/courses/${courseId}/progress`, { progress });
+  },
+
+  // 删除课程
+  delete: (courseId: string): Promise<{ success: boolean; message: string }> => {
+    return apiClient.delete(`/courses/${courseId}`);
+  },
+
+  // 归档课程
+  archive: (courseId: string): Promise<{ success: boolean; message: string }> => {
+    return apiClient.patch(`/courses/${courseId}/status`, { status: 'archived' });
+  },
+
+  // 恢复课程
+  restore: (courseId: string): Promise<{ success: boolean; message: string }> => {
+    return apiClient.patch(`/courses/${courseId}/status`, { status: 'active' });
+  },
+};
+```
+
+### 17.3 知识库API (src/api/knowledge.ts)
+
+```typescript
+import { apiClient } from './client';
+
+export interface Document {
+  id: string;
+  courseId: string;
+  title: string;
+  contentPreview?: string;
+  content?: string;
+  filePath?: string;
+  fileType?: string;
+  source: 'user' | 'ai';
+  createdAt: number;
+}
+
+export interface DocumentListResponse {
+  documents: Document[];
+}
+
+export interface SearchRequest {
+  courseId: string;
+  query: string;
+  topK?: number;
+}
+
+export interface SearchResult {
+  content: string;
+  score: number;
+  metadata: Record<string, any>;
+}
+
+export interface SearchResponse {
+  results: SearchResult[];
+}
+
+export const knowledgeApi = {
+  // 上传资料
+  upload: (courseId: string, file: File, onProgress?: (progress: number) => void): Promise<{ success: boolean; doc_id?: string }> => {
+    const formData = new FormData();
+    formData.append('course_id', courseId);
+    formData.append('file', file);
+    return apiClient.upload('/knowledge/upload', formData, onProgress);
+  },
+
+  // AI 智能补充资料
+  aiFetch: (courseId: string): Promise<{ success: boolean; message: string }> => {
+    return apiClient.post(`/knowledge/ai-fetch/${courseId}`);
+  },
+
+  // 获取资料列表
+  list: (courseId: string, source?: 'user' | 'ai'): Promise<DocumentListResponse> => {
+    return apiClient.get('/knowledge/documents', { course_id: courseId, source });
+  },
+
+  // 获取单个资料详情
+  get: (docId: string): Promise<Document> => {
+    return apiClient.get(`/knowledge/documents/${docId}`);
+  },
+
+  // 删除资料
+  delete: (docId: string): Promise<{ success: boolean; message: string }> => {
+    return apiClient.delete(`/knowledge/documents/${docId}`);
+  },
+
+  // 语义检索
+  search: (courseId: string, query: string, topK: number = 5): Promise<SearchResponse> => {
+    return apiClient.post('/knowledge/search', { course_id: courseId, query, top_k: topK });
+  },
+};
+```
+
+### 17.4 三问引擎API (src/api/threeAsk.ts)
+
+```typescript
+import { apiClient } from './client';
+
+export interface GraphNode {
+  id: string;
+  name: string;
+  description?: string;
+  bloomLevel: string;
+  difficulty: number;
+  isThresholdConcept: boolean;
+  x?: number;
+  y?: number;
+}
+
+export interface GraphLink {
+  source: string;
+  target: string;
+  relation: string;
+  strength: number;
+}
+
+export interface KnowledgeGraph {
+  nodes: GraphNode[];
+  links: GraphLink[];
+}
+
+export interface Controversy {
+  id: string;
+  topic: string;
+  proView: string;
+  proEvidence: string;
+  conView: string;
+  conEvidence: string;
+  confidence: number;
+}
+
+export interface ControversyListResponse {
+  controversies: Controversy[];
+}
+
+export interface QuizQuestion {
+  id: string;
+  dimension: string;
+  bloomLevel: string;
+  difficulty: number;
+  questionType: string;
+  question: string;
+  options?: string[];
+  correctAnswer: string;
+  explanation?: string;
+  knowledgePoints: string[];
+}
+
+export interface QuizGenerateResponse {
+  quizzes: QuizQuestion[];
+  total: number;
+}
+
+export interface QuizSubmitRequest {
+  courseId: string;
+  questionId: string;
+  userAnswer: string;
+  timeSpent?: number;
+}
+
+export interface QuizSubmitResponse {
+  isCorrect: boolean;
+  score: number;
+  explanation?: string;
+  feedback?: string;
+}
+
+export interface ProgressResponse {
+  question1: boolean;
+  question2: boolean;
+  question3: boolean;
+  overallProgress: number;
+}
+
+export const threeAskApi = {
+  // 第一问：生成知识图谱
+  generateGraph: (courseId: string): Promise<KnowledgeGraph> => {
+    return apiClient.post(`/three-ask/graph/generate/${courseId}`);
+  },
+
+  // 第一问：增量更新图谱
+  updateGraph: (courseId: string, docId: string): Promise<KnowledgeGraph> => {
+    return apiClient.post(`/three-ask/graph/update/${courseId}`, { doc_id: docId });
+  },
+
+  // 第二问：检测争议点（异步）
+  detectControversy: (courseId: string): Promise<{ status: string; message: string }> => {
+    return apiClient.post(`/three-ask/controversy/detect/${courseId}`);
+  },
+
+  // 第二问：获取争议点列表
+  getControversies: (courseId: string): Promise<ControversyListResponse> => {
+    return apiClient.get(`/three-ask/controversy/${courseId}`);
+  },
+
+  // 第三问：生成测评题目
+  generateQuiz: (courseId: string): Promise<QuizGenerateResponse> => {
+    return apiClient.post(`/three-ask/quiz/generate/${courseId}`);
+  },
+
+  // 第三问：提交单题答案
+  submitQuiz: (req: QuizSubmitRequest): Promise<QuizSubmitResponse> => {
+    return apiClient.post('/three-ask/quiz/submit', req);
+  },
+
+  // 第三问：完成测评
+  completeQuiz: (courseId: string): Promise<{ success: boolean; message: string; accuracy?: number }> => {
+    return apiClient.post(`/three-ask/quiz/${courseId}/complete`);
+  },
+
+  // 获取三问进度
+  getProgress: (courseId: string): Promise<ProgressResponse> => {
+    return apiClient.get(`/three-ask/progress/${courseId}`);
+  },
+};
+```
+
+### 17.5 SSE实时通信Hook (src/hooks/useSSE.ts)
+
+```typescript
+import { useEffect, useRef, useCallback } from 'react';
+
+export interface SSEEvent {
+  type: string;
+  data: any;
+}
+
+export interface SSEOptions {
+  onMessage?: (event: SSEEvent) => void;
+  onGraphUpdated?: (data: any) => void;
+  onControversyReady?: (data: any) => void;
+  onQuizReady?: (data: any) => void;
+  onProgress?: (data: any) => void;
+  onNotification?: (data: any) => void;
+  onError?: (error: Event) => void;
+  onOpen?: () => void;
+  autoReconnect?: boolean;
+  reconnectInterval?: number;
+}
+
+export function useSSE(courseId: string | undefined, options: SSEOptions = {}) {
+  const {
+    onMessage,
+    onGraphUpdated,
+    onControversyReady,
+    onQuizReady,
+    onProgress,
+    onNotification,
+    onError,
+    onOpen,
+    autoReconnect = true,
+    reconnectInterval = 3000,
+  } = options;
+
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const shouldReconnectRef = useRef(true);
+
+  const disconnect = useCallback(() => {
+    shouldReconnectRef.current = false;
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+  }, []);
+
+  const connect = useCallback(() => {
+    if (!courseId) return;
+
+    // 关闭现有连接
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+    }
+
+    shouldReconnectRef.current = true;
+    const url = `http://localhost:8000/api/sse/stream/${courseId}`;
+    const es = new EventSource(url);
+
+    es.onopen = () => {
+      console.log(`SSE 连接已建立: ${courseId}`);
+      onOpen?.();
+    };
+
+    es.onerror = (error) => {
+      console.error(`SSE 连接错误: ${courseId}`, error);
+      onError?.(error);
+
+      // 自动重连
+      if (autoReconnect && shouldReconnectRef.current) {
+        if (reconnectTimeoutRef.current) {
+          clearTimeout(reconnectTimeoutRef.current);
+        }
+        reconnectTimeoutRef.current = setTimeout(() => {
+          console.log(`SSE 尝试重连: ${courseId}`);
+          connect();
+        }, reconnectInterval);
+      }
+    };
+
+    // 监听通用消息事件
+    es.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        onMessage?.({ type: 'message', data });
+      } catch {
+        onMessage?.({ type: 'message', data: event.data });
+      }
+    };
+
+    // 监听 graph_updated 事件
+    es.addEventListener('graph_updated', (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+        onGraphUpdated?.(data);
+        onMessage?.({ type: 'graph_updated', data });
+      } catch {
+        console.error('解析 graph_updated 事件失败');
+      }
+    });
+
+    // 监听 controversy_ready 事件
+    es.addEventListener('controversy_ready', (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+        onControversyReady?.(data);
+        onMessage?.({ type: 'controversy_ready', data });
+      } catch {
+        console.error('解析 controversy_ready 事件失败');
+      }
+    });
+
+    // 监听 quiz_ready 事件
+    es.addEventListener('quiz_ready', (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+        onQuizReady?.(data);
+        onMessage?.({ type: 'quiz_ready', data });
+      } catch {
+        console.error('解析 quiz_ready 事件失败');
+      }
+    });
+
+    // 监听 progress 事件
+    es.addEventListener('progress', (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+        onProgress?.(data);
+        onMessage?.({ type: 'progress', data });
+      } catch {
+        console.error('解析 progress 事件失败');
+      }
+    });
+
+    // 监听 notification 事件
+    es.addEventListener('notification', (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+        onNotification?.(data);
+        onMessage?.({ type: 'notification', data });
+      } catch {
+        console.error('解析 notification 事件失败');
+      }
+    });
+
+    eventSourceRef.current = es;
+  }, [courseId, onMessage, onGraphUpdated, onControversyReady, onQuizReady, onProgress, onNotification, onError, onOpen, autoReconnect, reconnectInterval]);
+
+  useEffect(() => {
+    if (courseId) {
+      connect();
+    }
+
+    return () => {
+      disconnect();
+    };
+  }, [courseId, connect, disconnect]);
+
+  return { disconnect, connect };
+}
+
+export default useSSE;
+```
+
+### 17.6 API层汇总
+
+| 文件 | 用途 |
+|------|------|
+| client.ts | API客户端封装，支持GET/POST/PATCH/DELETE/上传 |
+| courses.ts | 课程管理API |
+| knowledge.ts | 知识库API |
+| threeAsk.ts | 三问引擎API |
+| useSSE.ts | SSE实时通信Hook |
+
+### 17.7 验证方法
+
+```bash
+cd frontend
+npm run dev
+# 打开浏览器控制台，检查是否有 API 调用错误
+```
