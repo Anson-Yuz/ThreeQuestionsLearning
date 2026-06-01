@@ -5144,11 +5144,14 @@ client/
 └── src/
     ├── main.tsx              # 入口，BrowserRouter包裹App
     ├── App.tsx               # 路由配置
-    ├── index.css             # Tailwind + 全局样式(.page-container边距145pt)
+    ├── index.css             # Tailwind + 全局样式(CSS变量+暗黑模式)
+    ├── stores/
+    │   └── themeStore.ts  # 暗黑模式状态管理
     ├── components/
     │   ├── ui/               # 基础UI组件
     │   │   ├── Icons.tsx     # SVG图标库
-    │   │   └── ActionSheet.tsx
+    │   │   ├── ActionSheet.tsx
+    │   │   └── ThemeToggle.tsx # 暗黑模式切换按钮
     │   ├── layout/           # 布局组件
     │   │   ├── TabBarLayout.tsx
     │   │   ├── NavBar.tsx
@@ -5178,6 +5181,8 @@ client/
 | 三问进度显示 | 进度条 | 三个圆点 | ✅ 已定稿 | 2026-06-01 |
 | 首页右上按钮 | 头像 | **上传资料** | ✅ 已定稿 | 2026-06-01 |
 | 课程卡片布局 | 横向滚动 | 纵向列表 | ✅ 已定稿 | 2026-06-01 |
+| 暗黑模式 | 跟随系统 | **手动切换** | ✅ 已定稿 | 2026-06-01 |
+| Profile暗黑按钮 | 无 | **月亮/太阳图标** | ✅ 已定稿 | 2026-06-01 |
 
 > 📝 恢复相同效果方法：查阅 index.css 中 .page-container 样式（padding: 145pt）
 
@@ -5214,8 +5219,38 @@ client/
 | Icons | components/ui/Icons.tsx | ✅ 完成 |
 | ActionSheet | components/ui/ActionSheet.tsx | ✅ 完成 |
 
-### 11.4 暗黑模式
+### 11.4 暗黑模式（iOS风格手动切换）
 
-- 使用 `@media (prefers-color-scheme: dark)` 自动跟随系统
-- 无需手动切换
-- CSS 变量：--bg-primary, --bg-secondary, --text-primary 等
+**切换机制**：通过 `.dark` 类控制 CSS 变量，手动点击按钮切换
+
+**存储**：localStorage 持久化
+
+**配色方案**：
+
+| 元素 | 亮色模式 | 暗黑模式 |
+|------|---------|---------|
+| 主背景 | #FFFFFF | #000000 |
+| 二级背景 | #F2F2F7 | #1C1C1E |
+| 三级背景 | #E5E5EA | #2C2C2E |
+| 主文字 | #000000 | #FFFFFF |
+| 次文字 | #6C6C70 | #8E8E93 |
+| 强调色 | #007AFF | #0A84FF |
+| 分割线 | rgba(60,60,67,0.08) | rgba(84,84,88,0.65) |
+
+**关键文件**：
+- `stores/themeStore.ts` - Zustand 状态管理
+- `components/ui/ThemeToggle.tsx` - 切换按钮组件
+- `App.tsx` - initTheme() 初始化
+
+### 11.5 组件样式映射
+
+| 组件属性 | CSS变量 |
+|---------|---------|
+| 页面背景 | `var(--bg-primary)` |
+| 卡片背景 | `var(--bg-secondary)` |
+| 按压态背景 | `var(--bg-tertiary)` |
+| 主文字 | `var(--text-primary)` |
+| 次文字 | `var(--text-secondary)` |
+| 分割线 | `var(--separator)` |
+| 主按钮 | `var(--accent)` |
+| 卡片阴影 | `var(--card-shadow)` |

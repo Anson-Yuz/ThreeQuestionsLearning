@@ -1,16 +1,17 @@
+import { useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import TabBarLayout from './components/layout/TabBarLayout'
 import Home from './pages/Home'
 import LearningSpace from './pages/LearningSpace'
 import QuizCenter from './pages/QuizCenter'
 import Profile from './pages/Profile'
-
-// 包装组件：隐藏 TabBar 的 TabBarLayout
-const HideTabBarWrapper = ({ children }: { children: React.ReactNode }) => (
-  <TabBarLayout hideTabBar>{children}</TabBarLayout>
-)
+import { initTheme } from './stores/themeStore'
 
 function App() {
+  useEffect(() => {
+    initTheme()
+  }, [])
+
   return (
     <Routes>
       <Route path="/" element={<TabBarLayout />}>

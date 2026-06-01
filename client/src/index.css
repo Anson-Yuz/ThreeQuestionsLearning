@@ -5,17 +5,65 @@
 :root {
   --safe-area-top: env(safe-area-inset-top);
   --safe-area-bottom: env(safe-area-inset-bottom);
+
+  /* 亮色模式 - 默认 */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f2f2f7;
+  --bg-tertiary: #e5e5ea;
+  --bg-grouped: #f2f2f7;
+
+  --text-primary: #000000;
+  --text-secondary: #6c6c70;
+  --text-tertiary: #8e8e93;
+  --text-placeholder: #8e8e93;
+
+  --separator: rgba(60, 60, 67, 0.08);
+  --separator-opaque: #c6c6c8;
+
+  --accent: #007aff;
+  --accent-pressed: #0051d5;
+  --success: #34c759;
+  --warning: #ff9500;
+  --error: #ff3b30;
+
+  --card-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+/* iOS 风格暗黑模式 - 通过 .dark 类激活 */
+.dark {
+  --bg-primary: #000000;
+  --bg-secondary: #1c1c1e;
+  --bg-tertiary: #2c2c2e;
+  --bg-grouped: #1c1c1e;
+
+  --text-primary: #ffffff;
+  --text-secondary: #8e8e93;
+  --text-tertiary: #6c6c70;
+  --text-placeholder: #6c6c70;
+
+  --separator: rgba(84, 84, 88, 0.65);
+  --separator-opaque: #38383a;
+
+  --accent: #0a84ff;
+  --accent-pressed: #0051d5;
+  --success: #30d158;
+  --warning: #ff9f0a;
+  --error: #ff453a;
+
+  --card-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 body {
   font-family: -apple-system, SF Pro, BlinkMacSystemFont, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #F2F2F7;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 .dark body {
-  background-color: #000;
+  background-color: var(--bg-primary);
 }
 
 /* 页面容器 - 左右留白145pt */
@@ -32,4 +80,38 @@ body {
 .scrollbar-hide {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* 主题切换按钮 - iOS风格 */
+.theme-toggle {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--bg-tertiary);
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-primary);
+  transition: all 0.2s cubic-bezier(0.2, 0.9, 0.4, 1.1);
+}
+
+.theme-toggle:active {
+  transform: scale(0.92);
+  background: var(--separator);
+}
+
+/* 通用卡片样式 */
+.card {
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  box-shadow: var(--card-shadow);
+}
+
+/* 分割线 */
+.divider {
+  background: var(--separator);
+  height: 0.5px;
+  width: 100%;
 }
