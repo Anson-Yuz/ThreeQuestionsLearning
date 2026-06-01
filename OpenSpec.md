@@ -10108,3 +10108,534 @@ cd frontend
 npm run dev
 # 打开浏览器控制台，检查是否有 API 调用错误
 ```
+
+---
+
+## 18. 前端业务组件层
+
+### 18.1 知识图谱组件 (src/components/business/KnowledgeGraph.tsx)
+
+```tsx
+import { memo, useEffect, useRef } from 'react'
+import * as echarts from 'echarts'
+
+interface GraphNode {
+  id: string
+  name: string
+  description: string
+  bloomLevel: string
+  difficulty: number
+  isThresholdConcept: boolean
+  x?: number
+  y?: number
+}
+
+interface GraphLink {
+  source: string
+  target: string
+  relation: string
+  strength: number
+}
+
+interface KnowledgeGraphProps {
+  data: { nodes: GraphNode[]; links: GraphLink[] }
+  loading?: boolean
+  onNodeClick?: (node: GraphNode) => void
+}
+
+const bloomColors: Record<string, string> = {
+  remember: '#8B5CF6',
+  understand: '#3B82F6',
+  apply: '#10B981',
+  analyze: '#F59E0B',
+  evaluate: '#EF4444',
+  create: '#EC4899',
+}
+
+const getNodeSize = (node: GraphNode) => {
+  let size = 30
+  if (node.isThresholdConcept) size = 45
+  switch (node.bloomLevel) {
+    case 'remember': size += 0; break
+    case 'understand': size += 5; break
+    case 'apply': size += 10; break
+    case 'analyze': size += 15; break
+    case 'evaluate': size += 20; break
+    case 'create': size += 25; break
+  }
+  return size
+}
+
+export const KnowledgeGraph = memo(({ data, loading, onNodeClick }: KnowledgeGraphProps) => {
+  const chartRef = useRef<HTMLDivElement>(null)
+  const chartInstance = useRef<echarts.ECharts | null>(null)
+
+  useEffect(() => {
+    if (!chartRef.current || loading) return
+
+    chartInstance.current = echarts.init(chartRef.current)
+
+    const option: echarts.EChartsOption = {
+      backgroundColor: 'transparent',
+      tooltip: {
+        trigger: 'item',
+        formatter: (params: any) => {
+          if (params.dataType === 'node') {
+            return `
+              <div style="padding: 8px; max-width: 200px;">
+                <div style="font-weight: 600; margin-bottom: 4px;">${params.data.name}</div>
+                <div style="font-size: 12px; color: #666; margin-bottom: 8px;">${params.data.description || ''}</div>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                  <span style="padding: 2px 6px; background: #f3f4f6; border-radius: 4px; font-size: 11px;">${params.data.bloomLevel}</span>
+                  <span style="padding: 2px 6px; background: #f3f4f6; border-radius: 4px; font-size: 11px;">难度: ${params.data.difficulty}</span>
+                </div>
+              </div>
+            `
+          }
+          return ''
+        },
+        backgroundColor: 'rgba(255,255,255,0.95)',
+        borderColor: '#e5e7eb',
+        borderWidth: 1,
+        borderRadius: 12,
+        padding: 8,
+      },
+      series: [{
+        type: 'graph',
+        layout: 'force',
+        force: {
+          repulsion: 500,
+          edgeLength: 150,
+          gravity: 0.1,
+          friction: 0.1,
+          layoutAnimation: true,
+        },
+        roam: true,
+        draggable: true,
+        data: data.nodes.map(node => ({
+          id: node.id,
+          name: node.name,
+          description: node.description,
+          bloomLevel: node.bloomLevel,
+          difficulty: node.difficulty,
+          symbolSize: getNodeSize(node),
+          itemStyle: {
+            color: bloomColors[node.bloomLevel] || '#6B7280',
+            borderColor: node.isThresholdConcept ? '#9333EA' : '#fff',
+            borderWidth: node.isThresholdConcept ? 3 : 2,
+            shadowBlur: 10,
+            shadowColor: 'rgba(0,0,0,0.1)',
+          },
+          x: node.x,
+          y: node.y,
+        })),
+        links: data.links.map(link => ({
+          source: link.source,
+          target: link.target,
+          lineStyle: {
+            color: link.relation === 'prerequisite' ? '#3B82F6' : '#9CA3AF',
+            width: link.strength * 3,
+            curveness: 0.3,
+            type: link.relation === 'contradicts' ? 'dashed' : 'solid',
+          },
+          label: {
+            show: link.relation === 'prerequisite',
+            formatter: '依赖',
+            fontSize: 10,
+          },
+        })),
+        emphasis: {
+          focus: 'adjacency',
+          lineStyle: { width: 4 },
+        },
+        lineStyle: { color: '#9CA3AF', curveness: 0.3 },
+        label: { show: true, position: 'right', fontSize: 12 },
+      }],
+    }
+
+    chartInstance.current.setOption(option)
+
+    chartInstance.current.on('click', (params: any) => {
+      if (params.dataType === 'node' && onNodeClick) {
+        const node = data.nodes.find(n => n.id === params.data.id)
+        if (node) onNodeClick(node)
+      }
+    })
+
+    const handleResize = () => chartInstance.current?.resize()
+    window.addEventListener('resize', handleResize)
+
+    return () => {
+      window.removeEventListener('resize', handleResize)
+      chartInstance.current?.dispose()
+    }
+  }, [data, loading, onNodeClick])
+
+  if (loading) {
+    return (
+      <div className="w-full h-[400px] bg-gray-100 dark:bg-gray-800 rounded-2xl flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-3 border-gray-200 border-t-blue-500 rounded-full animate-spin mx-auto mb-3" />
+          <p className="text-gray-500">正在分析知识结构...</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="relative w-full">
+      <div ref={chartRef} style={{ width: '100%', height: 400 }} />
+
+      {/* 图例 */}
+      <div className="absolute bottom-4 right-4 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm rounded-lg px-3 py-2 text-xs shadow-sm">
+        <div className="flex items-center gap-3 flex-wrap">
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#8B5CF6]"></span>记忆</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#3B82F6]"></span>理解</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#10B981]"></span>应用</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#F59E0B]"></span>分析</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#EF4444]"></span>评价</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#EC4899]"></span>创造</span>
+        </div>
+      </div>
+    </div>
+  )
+})
+
+KnowledgeGraph.displayName = 'KnowledgeGraph'
+
+export default KnowledgeGraph
+```
+
+### 18.2 学术争议面板 (src/components/business/ControversyPanel.tsx)
+
+```tsx
+import { memo, useState } from 'react'
+import { ChevronDownIcon, ChevronUpIcon, MessageIcon } from '../ui/Icons'
+
+interface Controversy {
+  id: string
+  topic: string
+  pro_view: string
+  pro_evidence: string
+  con_view: string
+  con_evidence: string
+  confidence: number
+}
+
+interface ControversyPanelProps {
+  controversies: Controversy[]
+  loading?: boolean
+  onDiscussionClick?: (controversy: Controversy) => void
+}
+
+export const ControversyPanel = memo(({
+  controversies,
+  loading,
+  onDiscussionClick,
+}: ControversyPanelProps) => {
+  const [expandedItem, setExpandedItem] = useState<string | null>(null)
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        {[1, 2].map(i => (
+          <div key={i} className="bg-gray-100 dark:bg-gray-800 rounded-2xl p-4 animate-pulse">
+            <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4 mb-4" />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="h-20 bg-gray-200 dark:bg-gray-700 rounded" />
+              <div className="h-20 bg-gray-200 dark:bg-gray-700 rounded" />
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  if (!controversies.length) {
+    return (
+      <div className="text-center py-12">
+        <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center">
+          <MessageIcon className="w-8 h-8 text-gray-400" />
+        </div>
+        <p className="text-gray-500 dark:text-gray-400 mb-2">暂无学术争议</p>
+        <p className="text-sm text-gray-400 dark:text-gray-500">
+          上传更多资料后，AI将自动分析学术分歧点
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {controversies.map((controversy) => (
+        <div
+          key={controversy.id}
+          className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden"
+        >
+          {/* 头部 */}
+          <div className="p-4 border-b border-gray-100 dark:border-gray-700">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900 dark:text-white">
+                {controversy.topic}
+              </h3>
+              <div className="flex items-center gap-2">
+                <ConfidenceBadge confidence={controversy.confidence} />
+                <button
+                  onClick={() => setExpandedItem(
+                    expandedItem === controversy.id ? null : controversy.id
+                  )}
+                  className="p-1 text-gray-400 hover:text-gray-600"
+                >
+                  {expandedItem === controversy.id ? (
+                    <ChevronUpIcon className="w-5 h-5" />
+                  ) : (
+                    <ChevronDownIcon className="w-5 h-5" />
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* 正反方对比 */}
+          <div className="grid grid-cols-2 divide-x divide-gray-100 dark:divide-gray-700">
+            {/* 正方 */}
+            <div className="p-4 bg-green-50/50 dark:bg-green-900/10">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-2 h-2 rounded-full bg-green-500" />
+                <span className="text-sm font-medium text-green-700 dark:text-green-400">
+                  正方观点
+                </span>
+              </div>
+              <p className="text-sm text-gray-700 dark:text-gray-300 mb-3">
+                {controversy.pro_view}
+              </p>
+              {expandedItem === controversy.id && controversy.pro_evidence && (
+                <div className="mt-2 p-2 bg-green-100/50 dark:bg-green-900/20 rounded-lg">
+                  <p className="text-xs text-green-800 dark:text-green-300">
+                    证据：{controversy.pro_evidence}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* 反方 */}
+            <div className="p-4 bg-red-50/50 dark:bg-red-900/10">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-2 h-2 rounded-full bg-red-500" />
+                <span className="text-sm font-medium text-red-700 dark:text-red-400">
+                  反方观点
+                </span>
+              </div>
+              <p className="text-sm text-gray-700 dark:text-gray-300 mb-3">
+                {controversy.con_view}
+              </p>
+              {expandedItem === controversy.id && controversy.con_evidence && (
+                <div className="mt-2 p-2 bg-red-100/50 dark:bg-red-900/20 rounded-lg">
+                  <p className="text-xs text-red-800 dark:text-red-300">
+                    证据：{controversy.con_evidence}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* 讨论按钮 */}
+          {onDiscussionClick && (
+            <div className="p-3 border-t border-gray-100 dark:border-gray-700">
+              <button
+                onClick={() => onDiscussionClick(controversy)}
+                className="w-full py-2 flex items-center justify-center gap-2 text-sm text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+              >
+                <MessageIcon className="w-4 h-4" />
+                参与讨论 ({(controversy.confidence * 100).toFixed(0)}% 关注度)
+              </button>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+})
+
+const ConfidenceBadge = ({ confidence }: { confidence: number }) => {
+  const getColor = () => {
+    if (confidence >= 0.8) return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+    if (confidence >= 0.5) return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
+    return 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+  }
+
+  return (
+    <span className={`px-2 py-0.5 rounded text-xs font-medium ${getColor()}`}>
+      {(confidence * 100).toFixed(0)}% 置信
+    </span>
+  )
+}
+
+ControversyPanel.displayName = 'ControversyPanel'
+
+export default ControversyPanel
+```
+
+### 18.3 能力雷达图组件 (src/components/business/RadarChart.tsx)
+
+```tsx
+import { memo, useEffect, useRef } from 'react'
+import * as echarts from 'echarts'
+
+interface RadarChartProps {
+  data: {
+    dimensions: { name: string; max: number }[]
+    values: number[]
+    average?: number
+    strongest?: string
+    weakest?: string
+  }
+  size?: 'small' | 'large'
+}
+
+export const RadarChart = memo(({ data, size = 'large' }: RadarChartProps) => {
+  const chartRef = useRef<HTMLDivElement>(null)
+  const chartInstance = useRef<echarts.ECharts | null>(null)
+
+  const isSmall = size === 'small'
+  const chartHeight = isSmall ? 200 : 300
+
+  useEffect(() => {
+    if (!chartRef.current) return
+
+    chartInstance.current = echarts.init(chartRef.current)
+
+    const option: echarts.EChartsOption = {
+      backgroundColor: 'transparent',
+      tooltip: {
+        trigger: 'item',
+        backgroundColor: 'rgba(255,255,255,0.95)',
+        borderColor: '#e5e7eb',
+        borderWidth: 1,
+        borderRadius: 12,
+        padding: 12,
+        textStyle: { color: '#374151' },
+      },
+      radar: {
+        indicator: data.dimensions.map(d => ({
+          name: d.name,
+          max: d.max,
+        })),
+        shape: 'polygon',
+        splitNumber: 4,
+        axisName: {
+          color: '#6B7280',
+          fontSize: isSmall ? 10 : 12,
+          padding: [3, 5],
+        },
+        splitLine: {
+          lineStyle: {
+            color: '#E5E7EB',
+            type: 'dashed',
+          },
+        },
+        splitArea: {
+          areaStyle: {
+            color: ['rgba(59, 130, 246, 0.02)', 'rgba(59, 130, 246, 0.05)'],
+          },
+        },
+        axisLine: {
+          lineStyle: { color: '#D1D5DB' },
+        },
+        radius: isSmall ? '60%' : '70%',
+      },
+      series: [{
+        type: 'radar',
+        data: [{
+          value: data.values,
+          name: '能力雷达',
+          lineStyle: {
+            color: '#3B82F6',
+            width: 2,
+          },
+          areaStyle: {
+            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+              { offset: 0, color: 'rgba(59, 130, 246, 0.4)' },
+              { offset: 1, color: 'rgba(59, 130, 246, 0.1)' },
+            ]),
+          },
+          symbol: 'circle',
+          symbolSize: isSmall ? 4 : 6,
+          itemStyle: {
+            color: '#3B82F6',
+            borderColor: '#fff',
+            borderWidth: 2,
+            shadowBlur: 10,
+            shadowColor: 'rgba(59, 130, 246, 0.3)',
+          },
+        }],
+      }],
+    }
+
+    chartInstance.current.setOption(option)
+
+    const handleResize = () => chartInstance.current?.resize()
+    window.addEventListener('resize', handleResize)
+
+    return () => {
+      window.removeEventListener('resize', handleResize)
+      chartInstance.current?.dispose()
+    }
+  }, [data, isSmall])
+
+  if (isSmall) {
+    return (
+      <div className="flex gap-4">
+        <div ref={chartRef} style={{ width: 120, height: chartHeight }} />
+        <div className="flex flex-col justify-center text-xs text-gray-500">
+          <div>平均: {data.average?.toFixed(1) || 0}</div>
+          {data.strongest && <div className="text-green-600">最强: {data.strongest}</div>}
+          {data.weakest && <div className="text-orange-500">最弱: {data.weakest}</div>}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="relative">
+      <div ref={chartRef} style={{ width: '100%', height: chartHeight }} />
+
+      <div className="flex justify-center gap-6 mt-4 text-sm">
+        <div className="text-center">
+          <div className="text-2xl font-bold text-blue-600">{data.average?.toFixed(1) || 0}</div>
+          <div className="text-gray-500">综合能力</div>
+        </div>
+        <div className="text-center">
+          <div className="text-2xl font-bold text-green-600">{data.strongest || '-'}</div>
+          <div className="text-gray-500">最强维度</div>
+        </div>
+        <div className="text-center">
+          <div className="text-2xl font-bold text-orange-500">{data.weakest || '-'}</div>
+          <div className="text-gray-500">最弱维度</div>
+        </div>
+      </div>
+    </div>
+  )
+})
+
+RadarChart.displayName = 'RadarChart'
+
+export default RadarChart
+```
+
+### 18.4 组件汇总
+
+| 文件 | 用途 |
+|------|------|
+| KnowledgeGraph.tsx | 知识图谱可视化，ECharts force布局，Bloom颜色编码 |
+| ControversyPanel.tsx | 学术争议面板，正反方对比，置信度标签 |
+| RadarChart.tsx | 能力雷达图，6维度Bloom认知层级可视化 |
+
+### 18.5 验证方法
+
+```bash
+cd frontend
+npm run dev
+# 访问学习空间页面，检查知识图谱是否正常渲染
+# 检查控制台是否有 ECharts 初始化错误
+```
