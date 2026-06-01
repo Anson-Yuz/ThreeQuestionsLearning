@@ -10639,3 +10639,523 @@ npm run dev
 # 访问学习空间页面，检查知识图谱是否正常渲染
 # 检查控制台是否有 ECharts 初始化错误
 ```
+
+---
+
+## 19. 配置文件层
+
+### 19.1 后端环境变量配置 (backend/.env.example)
+
+```env
+# ============================================
+# 三问高效学习机 - 后端环境变量配置
+# 复制此文件为 .env 并填入实际值
+# ============================================
+
+# MiniMax API 配置
+# 获取地址: https://platform.minimaxi.com
+MINIMAX_API_KEY=your_api_key_here
+MINIMAX_API_HOST=https://api.minimaxi.com
+
+# 本地存储路径
+DATA_DIR=./data
+UPLOAD_DIR=./data/uploads
+CHROMA_DIR=./data/chroma
+EXPORT_DIR=./data/exports
+
+# 模型配置
+LLM_MODEL=MiniMax-M2.7
+EMBEDDING_MODEL=BAAI/bge-large-zh-v1.5
+EMBEDDING_DIMENSION=1024
+
+# 服务配置
+BACKEND_PORT=8000
+FRONTEND_URL=http://localhost:5173
+
+# 开发模式
+DEBUG=true
+```
+
+### 19.2 前端环境变量配置 (frontend/.env.example)
+
+```env
+# ============================================
+# 三问高效学习机 - 前端环境变量配置
+# 复制此文件为 .env 并填入实际值
+# ============================================
+
+# API 服务地址
+VITE_API_URL=http://localhost:8000/api
+
+# 应用名称
+VITE_APP_NAME=三问高效学习机
+
+# 是否启用调试模式
+VITE_DEBUG=true
+```
+
+### 19.3 Docker Compose 配置 (docker-compose.yml)
+
+```yaml
+version: '3.8'
+
+services:
+  # 后端服务
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sanwen-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./backend:/app
+    environment:
+      - MINIMAX_API_KEY=${MINIMAX_API_KEY}
+      - MINIMAX_API_HOST=${MINIMAX_API_HOST}
+      - DATA_DIR=/app/data
+      - UPLOAD_DIR=/app/data/uploads
+      - CHROMA_DIR=/app/data/chroma
+      - BACKEND_PORT=8000
+      - FRONTEND_URL=http://localhost:5173
+      - DEBUG=true
+    restart: unless-stopped
+    networks:
+      - sanwen-network
+
+  # 前端服务
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: sanwen-frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:8000/api
+      - VITE_APP_NAME=三问高效学习机
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - sanwen-network
+
+  # ChromaDB 向量数据库（可选）
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: sanwen-chromadb
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./data/chroma:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - PERSIST_DIRECTORY=/chroma/chroma
+      - ANONYMIZED_TELEMETRY=FALSE
+    restart: unless-stopped
+    networks:
+      - sanwen-network
+
+networks:
+  sanwen-network:
+    driver: bridge
+```
+
+### 19.4 后端 Dockerfile (backend/Dockerfile)
+
+```dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# 安装系统依赖
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# 复制依赖文件
+COPY requirements.txt .
+
+# 安装 Python 依赖
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 复制应用代码
+COPY . .
+
+# 创建数据目录
+RUN mkdir -p /app/data/uploads /app/data/chroma /app/data/exports
+
+# 暴露端口
+EXPOSE 8000
+
+# 启动命令
+CMD ["python", "main.py"]
+```
+
+### 19.5 前端 Dockerfile (frontend/Dockerfile)
+
+```dockerfile
+FROM node:20-alpine
+
+WORKDIR /app
+
+# 复制依赖文件
+COPY package*.json ./
+
+# 安装依赖
+RUN npm ci
+
+# 复制应用代码
+COPY . .
+
+# 暴露端口
+EXPOSE 5173
+
+# 启动命令
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+```
+
+### 19.6 Windows 启动脚本 (start.bat)
+
+```batch
+@echo off
+chcp 65001 >nul
+title 三问高效学习机
+
+echo ========================================
+echo   三问高效学习机 - 启动脚本
+echo ========================================
+echo.
+
+:: 检查 Python 环境
+echo [1/4] 检查 Python 环境...
+python --version >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [错误] 未检测到 Python，请先安装 Python 3.8+
+    echo 下载地址: https://python.org
+    pause
+    exit /b 1
+)
+echo        Python 已就绪
+
+:: 检查 Node.js 环境
+echo [2/4] 检查 Node.js 环境...
+node --version >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [错误] 未检测到 Node.js，请先安装 Node.js 18+
+    echo 下载地址: https://nodejs.org
+    pause
+    exit /b 1
+)
+echo        Node.js 已就绪
+
+:: 启动后端
+echo [3/4] 启动后端服务...
+cd backend
+start "三问学习机-后端" cmd /c "python main.py"
+cd ..
+
+:: 等待后端启动
+timeout /t 3 /nobreak >nul
+
+:: 启动前端
+echo [4/4] 启动前端服务...
+cd frontend
+start "三问学习机-前端" cmd /c "npm run dev"
+cd ..
+
+:: 打开浏览器
+timeout /t 2 /nobreak >nul
+start http://localhost:5173
+
+echo.
+echo ========================================
+echo   启动完成！
+echo   前端地址: http://localhost:5173
+echo   后端地址: http://localhost:8000
+echo   API 文档: http://localhost:8000/docs
+echo ========================================
+echo.
+echo 按任意键关闭此窗口...
+pause >nul
+```
+
+### 19.7 Mac/Linux 启动脚本 (start.sh)
+
+```bash
+#!/bin/bash
+
+# 颜色定义
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+echo "========================================"
+echo "  三问高效学习机 - 启动脚本"
+echo "========================================"
+echo
+
+# 检查 Python 环境
+echo "[1/4] 检查 Python 环境..."
+if ! command -v python3 &> /dev/null; then
+    echo -e "${RED}[错误] 未检测到 Python3，请先安装 Python 3.8+${NC}"
+    exit 1
+fi
+echo -e "${GREEN}       Python 已就绪${NC}"
+
+# 检查 Node.js 环境
+echo "[2/4] 检查 Node.js 环境..."
+if ! command -v node &> /dev/null; then
+    echo -e "${RED}[错误] 未检测到 Node.js，请先安装 Node.js 18+${NC}"
+    exit 1
+fi
+echo -e "${GREEN}       Node.js 已就绪${NC}"
+
+# 创建数据目录
+echo "[3/4] 创建数据目录..."
+mkdir -p data/uploads data/chroma data/exports
+
+# 启动后端
+echo "[4/4] 启动后端服务..."
+cd backend
+python3 main.py &
+BACKEND_PID=$!
+cd ..
+
+# 等待后端启动
+sleep 3
+
+# 启动前端
+cd frontend
+npm run dev &
+FRONTEND_PID=$!
+cd ..
+
+# 打开浏览器
+sleep 2
+open http://localhost:5173 2>/dev/null || xdg-open http://localhost:5173 2>/dev/null || echo "请手动打开浏览器访问 http://localhost:5173"
+
+echo
+echo "========================================"
+echo -e "${GREEN}  启动完成！${NC}"
+echo "   前端地址: http://localhost:5173"
+echo "   后端地址: http://localhost:8000"
+echo "   API 文档: http://localhost:8000/docs"
+echo "========================================"
+echo
+echo "后端 PID: $BACKEND_PID"
+echo "前端 PID: $FRONTEND_PID"
+echo
+echo "按 Ctrl+C 停止服务..."
+
+# 等待用户中断
+wait
+```
+
+### 19.8 Windows 安装脚本 (install.bat)
+
+```batch
+@echo off
+chcp 65001 >nul
+title 三问学习机 - 安装向导
+
+echo ========================================
+echo   三问高效学习机 - 安装脚本
+echo ========================================
+echo.
+
+:: 检查 Python 环境
+echo [1/3] 检查 Python 环境...
+python --version >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [错误] 未检测到 Python，请先安装 Python 3.8+
+    echo 下载地址: https://python.org
+    pause
+    exit /b 1
+)
+python --version
+echo.
+
+:: 检查 Node.js 环境
+echo [2/3] 检查 Node.js 环境...
+node --version >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [错误] 未检测到 Node.js，请先安装 Node.js 18+
+    echo 下载地址: https://nodejs.org
+    pause
+    exit /b 1
+)
+node --version
+echo.
+
+:: 安装后端依赖
+echo [3/3] 安装项目依赖...
+echo.
+echo 正在安装后端依赖...
+cd backend
+pip install -r requirements.txt
+if %errorlevel% neq 0 (
+    echo [警告] 后端依赖安装可能失败，请检查网络
+)
+cd ..
+
+echo 正在安装前端依赖...
+cd frontend
+call npm install
+if %errorlevel% neq 0 (
+    echo [警告] 前端依赖安装可能失败，请检查网络
+)
+cd ..
+
+:: 创建数据目录
+mkdir data\chroma 2>nul
+mkdir data\uploads 2>nul
+mkdir data\exports 2>nul
+
+:: 初始化数据库
+echo.
+echo 正在初始化数据库...
+cd backend
+python database.py
+cd ..
+
+echo.
+echo ========================================
+echo   安装完成！
+echo   请复制 .env.example 为 .env 并配置 API Key
+echo   然后运行 start.bat 启动程序
+echo ========================================
+echo.
+pause
+```
+
+### 19.9 Mac/Linux 安装脚本 (install.sh)
+
+```bash
+#!/bin/bash
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+echo "========================================"
+echo "  三问高效学习机 - 安装脚本"
+echo "========================================"
+echo
+
+# 检查 Python 环境
+echo "[1/3] 检查 Python 环境..."
+if ! command -v python3 &> /dev/null; then
+    echo -e "${RED}[错误] 未检测到 Python3，请先安装 Python 3.8+${NC}"
+    exit 1
+fi
+python3 --version
+echo
+
+# 检查 Node.js 环境
+echo "[2/3] 检查 Node.js 环境..."
+if ! command -v node &> /dev/null; then
+    echo -e "${RED}[错误] 未检测到 Node.js，请先安装 Node.js 18+${NC}"
+    exit 1
+fi
+node --version
+echo
+
+# 安装后端依赖
+echo "[3/3] 安装项目依赖..."
+echo
+echo "正在安装后端依赖..."
+cd backend
+pip3 install -r requirements.txt
+if [ $? -ne 0 ]; then
+    echo -e "${YELLOW}[警告] 后端依赖安装可能失败，请检查网络${NC}"
+fi
+cd ..
+
+echo "正在安装前端依赖..."
+cd frontend
+npm install
+if [ $? -ne 0 ]; then
+    echo -e "${YELLOW}[警告] 前端依赖安装可能失败，请检查网络${NC}"
+fi
+cd ..
+
+# 创建数据目录
+mkdir -p data/chroma data/uploads data/exports
+
+# 初始化数据库
+echo
+echo "正在初始化数据库..."
+cd backend
+python3 database.py
+cd ..
+
+echo
+echo "========================================"
+echo -e "${GREEN}  安装完成！${NC}"
+echo "   请复制 .env.example 为 .env 并配置 API Key"
+echo "   然后运行 ./start.sh 启动程序"
+echo "========================================"
+echo
+
+# 给启动脚本添加执行权限
+chmod +x start.sh
+```
+
+### 19.10 根目录 package.json (package.json)
+
+```json
+{
+  "name": "sanwen-learning",
+  "version": "1.0.0",
+  "description": "三问高效学习机 - AI驱动的个性化学习工具",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd backend && python main.py",
+    "dev:frontend": "cd frontend && npm run dev",
+    "install:all": "npm run install:backend && npm run install:frontend",
+    "install:backend": "cd backend && pip install -r requirements.txt",
+    "install:frontend": "cd frontend && npm install",
+    "build": "cd frontend && npm run build",
+    "start": "npm run dev"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}
+```
+
+### 19.11 配置文件汇总
+
+| 文件 | 用途 |
+|------|------|
+| backend/.env.example | 后端环境变量配置模板 |
+| frontend/.env.example | 前端环境变量配置模板 |
+| docker-compose.yml | Docker 容器编排配置 |
+| backend/Dockerfile | 后端 Docker 镜像构建 |
+| frontend/Dockerfile | 前端 Docker 镜像构建 |
+| start.bat | Windows 启动脚本 |
+| start.sh | Mac/Linux 启动脚本 |
+| install.bat | Windows 安装脚本 |
+| install.sh | Mac/Linux 安装脚本 |
+| package.json | 根目录项目配置与/npm脚本 |
+
+### 19.12 验证方法
+
+```bash
+# Windows: 双击 install.bat 安装依赖，然后双击 start.bat 启动
+# Mac/Linux: chmod +x install.sh start.sh && ./install.sh && ./start.sh
+# Docker: docker-compose up -d
+```
