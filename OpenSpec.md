@@ -13040,3 +13040,228 @@ def get_parser_service() -> ParserService:
 | 修复5 | backend/services/chroma_client.py | 完整实现 |
 | 修复6 | backend/services/embedding_service.py | 完整实现 |
 | 修复7 | backend/services/parser_service.py | 完整实现 |
+
+---
+
+## 二十二、桌面应用打包方案（Electron + 内嵌 Python）
+
+### 22.1 方案概述
+
+基于 Electron + 内嵌 Python 运行时，将三问学习机打包为**双击即可运行的独立桌面应用**，支持 Windows 和 macOS 双平台。
+
+| 平台 | 安装程序 | 便携版 | 内嵌Python | 用户需装环境 |
+|------|---------|--------|-----------|-------------|
+| Windows | Setup.exe | 便携版.exe | ✅ | ❌ |
+| macOS | .dmg | .app | ✅ | ❌ |
+
+### 22.2 最终产物
+
+```
+输出文件/
+├── Windows/
+│   ├── 三问学习机-Setup.exe # Windows 安装程序
+│   └── 三问学习机-便携版.exe # Windows 免安装版
+└── macOS/
+    ├── 三问学习机.dmg # macOS 安装镜像
+    └── 三问学习机.app # macOS 应用程序
+```
+
+### 22.3 项目目录结构
+
+```
+sanwen-desktop/
+├── electron/
+│   ├── main.js # Electron 主进程
+│   ├── preload.js # 预加载脚本
+│   ├── splash.html # 启动画面
+│   ├── package.json # Electron 配置
+│   └── installer/
+│       ├── icon.ico # Windows 图标
+│       ├── icon.icns # macOS 图标
+│       └── entitlements.mac.plist # macOS 权限配置
+│
+├── frontend/ # React 前端源码
+├── backend/ # Python 后端源码
+├── scripts/
+│   ├── build-windows.bat # Windows 打包脚本
+│   ├── build-mac.sh # macOS 打包脚本
+│   └── build-all.sh # 全平台打包脚本
+│
+├── python-runtime/ # 内嵌 Python 运行时
+│   ├── windows/ # Windows Python 3.11
+│   └── mac/ # macOS Python 3.11
+│
+└── dist/ # 打包输出目录
+```
+
+### 22.4 核心文件清单
+
+| 文件 | 路径 | 说明 |
+|------|------|------|
+| main.js | electron/main.js | Electron 主进程，双系统适配 |
+| preload.js | electron/preload.js | 预加载脚本，暴露安全API |
+| splash.html | electron/splash.html | 启动画面 |
+| package.json | electron/package.json | Electron 依赖和打包配置 |
+| build-windows.bat | scripts/build-windows.bat | Windows 打包脚本 |
+| build-mac.sh | scripts/build-mac.sh | macOS 打包脚本 |
+
+### 22.5 Electron 主进程核心代码
+
+```javascript
+// electron/main.js 核心函数
+
+// 获取内嵌 Python 路径（双系统适配）
+function getPythonPath() {
+  if (os.platform() === 'win32') {
+    return path.join(process.resourcesPath, 'python', 'python.exe');
+  } else if (os.platform() === 'darwin') {
+    return path.join(process.resourcesPath, 'python', 'bin', 'python3');
+  }
+  return 'python3';
+}
+
+// 启动后端服务
+async function startBackend() {
+  const pythonPath = getPythonPath();
+  const backendPath = getBackendPath();
+
+  backendProcess = spawn(pythonPath, [backendPath], {
+    env: { ...process.env, PYTHONUNBUFFERED: '1' }
+  });
+
+  // 等待后端启动成功
+  return new Promise((resolve) => {
+    backendProcess.stdout.on('data', (data) => {
+      if (data.toString().includes('Application startup complete')) {
+        resolve();
+      }
+    });
+  });
+}
+```
+
+### 22.6 Electron 配置
+
+#### electron/package.json
+
+```json
+{
+  "name": "sanwen-learning",
+  "version": "1.0.0",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:all": "electron-builder --win --mac"
+  },
+  "build": {
+    "appId": "com.sanwen.learning",
+    "productName": "三问学习机",
+    "directories": { "output": "../dist" },
+    "extraResources": [
+      { "from": "../python-runtime/windows", "to": "python", "platform": "win32" },
+      { "from": "../python-runtime/mac", "to": "python", "platform": "mac" },
+      { "from": "../backend", "to": "backend" },
+      { "from": "../frontend/dist", "to": "frontend" }
+    ],
+    "win": {
+      "target": ["nsis", "portable"],
+      "icon": "installer/icon.ico"
+    },
+    "mac": {
+      "target": ["dmg", "zip"],
+      "icon": "installer/icon.icns"
+    }
+  }
+}
+```
+
+### 22.7 打包脚本
+
+#### Windows 打包脚本 (scripts/build-windows.bat)
+
+```batch
+@echo off
+echo [1/5] 构建前端...
+cd ../frontend && npm run build
+
+echo [2/5] 准备 Python 运行时...
+if not exist "../python-runtime/windows" exit /b 1
+
+echo [3/5] 安装后端依赖...
+cd ../python-runtime/windows
+.\python.exe -m pip install -r ../../backend/requirements.txt
+
+echo [4/5] 打包 Electron 应用...
+cd ../electron && npm install && npm run build:win
+
+echo 打包完成！输出目录: electron/dist/
+```
+
+#### macOS 打包脚本 (scripts/build-mac.sh)
+
+```bash
+#!/bin/bash
+echo "[1/5] 构建前端..."
+cd ../frontend && npm run build
+
+echo "[2/5] 准备 Python 运行时..."
+[ ! -d "../python-runtime/mac" ] && exit 1
+
+echo "[3/5] 安装后端依赖..."
+cd ../python-runtime/mac
+./bin/python3 -m pip install -r ../../backend/requirements.txt
+
+echo "[4/5] 打包 Electron 应用..."
+cd ../electron && npm install && npm run build:mac
+
+echo "打包完成！输出目录: electron/dist/"
+```
+
+### 22.8 准备工作清单
+
+| 项目 | 说明 | 获取方式 |
+|------|------|---------|
+| Windows Python 运行时 | Python 3.11 嵌入式版 | https://python.org/downloads/release/python-3118/ |
+| macOS Python 运行时 | Python 3.11 Framework | 同上，下载 macOS installer |
+| Windows 图标 | icon.ico (多尺寸) | 自行设计或在线生成 |
+| macOS 图标 | icon.icns (多尺寸) | 自行设计或在线转换 |
+
+### 22.9 打包流程
+
+```bash
+# 1. 准备 Python 运行时
+mkdir -p python-runtime/windows python-runtime/mac
+# 下载并解压 Python 到对应目录
+
+# 2. 执行打包
+cd scripts
+./build-windows.bat   # Windows 打包
+./build-mac.sh        # macOS 打包
+./build-all.sh        # 当前系统打包
+
+# 3. 输出文件位置
+# Windows: electron/dist/三问学习机-Setup-1.0.0.exe
+# macOS:   electron/dist/三问学习机-1.0.0.dmg
+```
+
+### 22.10 用户使用方式
+
+| 平台 | 使用方式 |
+|------|---------|
+| Windows | 双击 三问学习机-Setup.exe 安装，或直接运行便携版 |
+| macOS | 双击 .dmg 将应用拖入 Applications 文件夹 |
+
+用户无需安装 Python、Node.js 等任何环境，双击即可运行。
+
+### 22.11 方案总结
+
+| 特性 | Windows | macOS |
+|------|---------|-------|
+| 安装程序 | ✅ Setup.exe | ✅ .dmg |
+| 便携版 | ✅ 免安装 exe | ✅ .app |
+| 内嵌 Python | ✅ 是 | ✅ 是 |
+| 双击即用 | ✅ 是 | ✅ 是 |
+| 用户需装环境 | ❌ 否 | ❌ 否 |
+| 打包体积 | ~150MB | ~180MB |
