@@ -4,7 +4,7 @@ import { NavBar } from '../components/layout/NavBar'
 import KnowledgeGraph from '../components/business/KnowledgeGraph'
 import ControversyPanel from '../components/business/ControversyPanel'
 import QuizEntrance from '../components/business/QuizEntrance'
-import { ChevronLeftIcon, RefreshIcon, UploadIcon, GlobeIcon, DocumentIcon } from '../components/ui/Icons'
+import { ChevronRightIcon, RefreshIcon, UploadIcon, GlobeIcon, DocumentIcon } from '../components/ui/Icons'
 
 // 模拟知识图谱数据
 const mockGraphData = {

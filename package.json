@@ -1,0 +1,14 @@
+{
+  "name": "three-questions-learner",
+  "version": "1.0.0",
+  "private": true,
+  "description": "三问高效学习机 - AI驱动的个性化学习工具",
+  "scripts": {
+    "dev:client": "cd client && npm run dev",
+    "dev:backend": "cd backend && python3 main.py",
+    "build": "cd client && npm run build",
+    "check": "bash scripts/full-check.sh",
+    "fix": "bash scripts/auto-fix.sh",
+    "test": "cd backend && pytest --cov=. --cov-report=term"
+  }
+}
