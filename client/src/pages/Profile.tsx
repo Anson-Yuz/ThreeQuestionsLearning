@@ -24,7 +24,8 @@ const Profile = () => {
       <div className="h-11 bg-white dark:bg-gray-900" />
 
       {/* 头部 */}
-      <div className="bg-white dark:bg-gray-900 px-4 py-6">
+      <div className="bg-white dark:bg-gray-900">
+        <div className="page-container py-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
@@ -38,11 +39,12 @@ const Profile = () => {
             </div>
           </div>
           <ThemeToggle />
+          </div>
         </div>
       </div>
 
       {/* 学习数据 — iOS 分组卡片 */}
-      <div className="px-4 mt-6">
+      <div className="page-container mt-6">
         <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-sm">
           <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-4 uppercase tracking-wide">学习数据</h2>
           <div className="grid grid-cols-2 gap-3">
@@ -59,7 +61,7 @@ const Profile = () => {
       </div>
 
       {/* 周学习趋势 */}
-      <div className="px-4 mt-4">
+      <div className="page-container mt-4">
         <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-sm">
           <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-4 uppercase tracking-wide">周学习趋势</h2>
           <div className="flex items-end justify-between h-28 gap-1.5 px-1">
@@ -85,7 +87,7 @@ const Profile = () => {
       </div>
 
       {/* 功能列表 — iOS grouped tableview 风格 */}
-      <div className="px-4 mt-4 mb-8">
+      <div className="page-container mt-4 mb-8">
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden divide-y divide-gray-100 dark:divide-gray-700">
           <FunctionItem icon={<ArchiveIcon className="w-5 h-5" />} label="课程归档" />
           <FunctionItem icon={<UploadIcon className="w-5 h-5" />} label="资料上传历史" />

@@ -108,7 +108,7 @@ const QuizCenter = () => {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-black flex flex-col">
         <NavBar title="测评中心" showBack onLeftClick={handleBack} />
-        <EmptyState title="暂无测评" description="先学习相关课程，测评将自动生成" action="去学习" onAction={handleBack} />
+        <EmptyState title="暂无测评" description="先学习相关课程，测评将自动生成" />
       </div>
     )
   }

@@ -100,8 +100,6 @@ const Home = () => {
           <EmptyState
             title="无法载入"
             description="请检查网络后重试"
-            action="重试"
-            onAction={() => fetchCourses()}
             loading={loading}
           />
         )}

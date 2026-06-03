@@ -97,8 +97,6 @@ const LearningSpace = () => {
         <EmptyState
           title={pageError ? '无法载入' : '载入中…'}
           description={pageError ? '请检查网络后重试' : undefined}
-          action={pageError ? '重试' : undefined}
-          onAction={pageError ? () => { setPageError(''); if (courseId) coursesApi.get(courseId).then(setCourse).catch((e) => setPageError(friendlyMsg(e))) } : undefined}
           loading={initialLoading}
         />
       </div>
@@ -159,7 +157,7 @@ const LearningSpace = () => {
             </div>
 
             {graphError ? (
-              <EmptyState title="无法载入" description="请检查网络后重试" action="重试" onAction={handleRefreshGraph} />
+              <EmptyState title="无法载入" description="请检查网络后重试" />
             ) : graphLoading ? (
               <EmptyState title="载入中…" loading />
             ) : graphData.nodes.length === 0 ? (
@@ -177,7 +175,7 @@ const LearningSpace = () => {
               <p className="text-sm text-gray-500 mt-1">AI自动分析资料中的学术争议</p>
             </div>
             {controError ? (
-              <EmptyState title="无法载入" description="请检查网络后重试" action="重试" onAction={handleLoadControversy} />
+              <EmptyState title="无法载入" description="请检查网络后重试" />
             ) : (
               <ControversyPanel controversies={controversies} loading={controLoading} />
             )}

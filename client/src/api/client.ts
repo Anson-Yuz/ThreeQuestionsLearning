@@ -65,7 +65,7 @@ class ApiClient {
       }
       const raw = (error as Error).message || '';
       if (raw.includes('Failed to fetch') || raw.includes('NetworkError')) {
-        throw { status: 0, message: '网络连接不稳定，请稍后重试' };
+        throw { status: 0, message: '网络连接不稳定' };
       }
       throw { status: 0, message: raw || '网络错误' };
     }
