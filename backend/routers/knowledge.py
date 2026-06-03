@@ -120,11 +120,11 @@ async def list_documents(
 ):
     """获取课程资料列表"""
     with get_db() as conn:
-        query = "SELECT * FROM documents WHERE course_id = ?"
+        query = "SELECT id, title, content, source_type, source_url, file_type, source, file_path, created_at FROM documents WHERE course_id = ?"
         params = [course_id]
 
         if source:
-            query += " AND source = ?"
+            query += " AND source_type = ?"
             params.append(source)
 
         query += " ORDER BY created_at DESC"
@@ -137,6 +137,8 @@ async def list_documents(
                 "id": row["id"],
                 "title": row["title"],
                 "content_preview": row["content"][:200] if row["content"] else "",
+                "source_type": row["source_type"] or "user_upload",
+                "source_url": row["source_url"] or "",
                 "file_type": row["file_type"],
                 "source": row["source"],
                 "created_at": row["created_at"]

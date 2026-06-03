@@ -4,12 +4,16 @@ export interface Document {
   id: string;
   courseId: string;
   title: string;
+  content_preview?: string;
   contentPreview?: string;
   content?: string;
   filePath?: string;
   fileType?: string;
-  source: 'user' | 'ai';
+  source: string;
+  source_type?: 'user_upload' | 'web_discover';
+  source_url?: string;
   createdAt: number;
+  created_at?: number;
 }
 
 export interface DocumentListResponse {
@@ -46,8 +50,8 @@ export const knowledgeApi = {
     return apiClient.post(`/knowledge/ai-fetch/${courseId}`);
   },
 
-  // 获取资料列表
-  list: (courseId: string, source?: 'user' | 'ai'): Promise<DocumentListResponse> => {
+  // 获取资料列表 (source: 'user_upload' | 'web_discover')
+  list: (courseId: string, source?: string): Promise<DocumentListResponse> => {
     return apiClient.get('/knowledge/documents', { course_id: courseId, source });
   },
 

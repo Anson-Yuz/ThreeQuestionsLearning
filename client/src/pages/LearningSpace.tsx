@@ -6,10 +6,12 @@ import ControversyPanel from '../components/business/ControversyPanel'
 import QuizEntrance from '../components/business/QuizEntrance'
 import EmptyState from '../components/ui/EmptyState'
 import DiscoverResultsPanel from '../components/business/DiscoverResultsPanel'
-import { RefreshIcon, GlobeIcon, DocumentIcon, SparklesIcon } from '../components/ui/Icons'
+import KnowledgeBase from '../components/business/KnowledgeBase'
+import { RefreshIcon, SparklesIcon } from '../components/ui/Icons'
 import { coursesApi, Course } from '../api/courses'
 import { threeAskApi, KnowledgeGraph as GraphData } from '../api/threeAsk'
 import { discoverApi, DiscoverResult } from '../api/discover'
+import { knowledgeApi, Document } from '../api/knowledge'
 
 const friendlyMsg = (err: unknown): string => {
   if (err instanceof Error) {
@@ -38,6 +40,9 @@ const LearningSpace = () => {
   const [discoverCount, setDiscoverCount] = useState(0)
   const [discoverResults, setDiscoverResults] = useState<DiscoverResult[]>([])
   const [showDiscoverPanel, setShowDiscoverPanel] = useState(false)
+  const [docs, setDocs] = useState<Document[]>([])
+  const [docsLoading, setDocsLoading] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
 
   // 加载课程信息 — 三态处理
   useEffect(() => {
@@ -114,13 +119,23 @@ const LearningSpace = () => {
     return () => es.close()
   }, [courseId])
 
+  // 加载知识库文档
+  useEffect(() => {
+    if (!courseId) return
+    setDocsLoading(true)
+    knowledgeApi.list(courseId)
+      .then((res) => setDocs(res.documents || []))
+      .catch(() => setDocs([]))
+      .finally(() => setDocsLoading(false))
+  }, [courseId, refreshKey])
+
   const handleImportMore = useCallback(async (urls: string[]) => {
     if (!courseId) return
     try {
       await discoverApi.importUrls(urls, '', courseId)
       setDiscoverCount(0)
       setShowDiscoverPanel(false)
-      await fetch('') // trigger re-render — actual refresh happens via parent
+      setRefreshKey((k) => k + 1)
     } catch {
       alert('导入失败')
     }
@@ -257,22 +272,15 @@ const LearningSpace = () => {
 
       {/* 底部知识库 */}
       <div className="bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800 p-4">
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-medium text-gray-900 dark:text-white">复合知识库</span>
-          <button className="px-3 py-1.5 text-sm text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg">
-            上传资料
-          </button>
-        </div>
-        <div className="flex gap-4 mt-3">
-          <div className="flex items-center gap-1 text-xs text-gray-500">
-            <GlobeIcon className="w-4 h-4" />
-            <span>AI补充</span>
-          </div>
-          <div className="flex items-center gap-1 text-xs text-gray-500">
-            <DocumentIcon className="w-4 h-4" />
-            <span>我的上传</span>
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-sm font-semibold text-gray-900 dark:text-white">复合知识库</span>
+          <div className="flex items-center gap-2">
+            <button className="px-3 py-1.5 text-xs text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg">
+              上传资料
+            </button>
           </div>
         </div>
+        <KnowledgeBase documents={docs} loading={docsLoading} />
       </div>
     </div>
   )
