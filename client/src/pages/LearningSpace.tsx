@@ -5,8 +5,8 @@ import KnowledgeGraph from '../components/business/KnowledgeGraph'
 import ControversyPanel from '../components/business/ControversyPanel'
 import QuizEntrance from '../components/business/QuizEntrance'
 import EmptyState from '../components/ui/EmptyState'
-import DiscoverPanel from '../components/business/DiscoverPanel'
-import { RefreshIcon, GlobeIcon, DocumentIcon } from '../components/ui/Icons'
+import DiscoverResultsPanel from '../components/business/DiscoverResultsPanel'
+import { RefreshIcon, GlobeIcon, DocumentIcon, SparklesIcon } from '../components/ui/Icons'
 import { coursesApi, Course } from '../api/courses'
 import { threeAskApi, KnowledgeGraph as GraphData } from '../api/threeAsk'
 import { discoverApi, DiscoverResult } from '../api/discover'
@@ -35,6 +35,7 @@ const LearningSpace = () => {
   const [controLoading, setControLoading] = useState(false)
   const [controError, setControError] = useState('')
   const [progress, setProgress] = useState(0)
+  const [discoverCount, setDiscoverCount] = useState(0)
   const [discoverResults, setDiscoverResults] = useState<DiscoverResult[]>([])
   const [showDiscoverPanel, setShowDiscoverPanel] = useState(false)
 
@@ -91,7 +92,13 @@ const LearningSpace = () => {
     if (activeSection === 'controversy') handleLoadControversy()
   }, [activeSection, pageError, handleRefreshGraph, handleLoadControversy])
 
-  // SSE 监听 discover_ready 事件
+  // 挂载时自动触发后台异步搜索
+  useEffect(() => {
+    if (!courseId || !course?.originalQuestion) return
+    discoverApi.start(courseId, course.originalQuestion).catch(() => {})
+  }, [courseId, course?.originalQuestion])
+
+  // SSE 监听 discover_ready → 浮动提示
   useEffect(() => {
     if (!courseId) return
     const es = new EventSource(`/api/sse/stream/${courseId}`)
@@ -100,17 +107,24 @@ const LearningSpace = () => {
         const data = JSON.parse(e.data)
         if (data.results?.length > 0) {
           setDiscoverResults(data.results)
-          setShowDiscoverPanel(true)
+          setDiscoverCount(data.results.length)
         }
       } catch {}
     })
     return () => es.close()
   }, [courseId])
 
-  const handleReSearch = useCallback(async () => {
-    if (!courseId || !course?.originalQuestion) return
-    discoverApi.start(courseId, course.originalQuestion).catch(() => {})
-  }, [courseId, course?.originalQuestion])
+  const handleImportMore = useCallback(async (urls: string[]) => {
+    if (!courseId) return
+    try {
+      await discoverApi.importUrls(urls, '', courseId)
+      setDiscoverCount(0)
+      setShowDiscoverPanel(false)
+      await fetch('') // trigger re-render — actual refresh happens via parent
+    } catch {
+      alert('导入失败')
+    }
+  }, [courseId])
 
   const handleBack = () => navigate('/home')
 
@@ -217,16 +231,26 @@ const LearningSpace = () => {
         )}
       </div>
 
-      {/* 发现资料面板 */}
+      {/* 浮动发现提示 */}
+      {discoverCount > 0 && (
+        <div className="fixed bottom-20 right-4 z-40">
+          <button
+            onClick={() => setShowDiscoverPanel(true)}
+            className="bg-blue-500 text-white px-4 py-3 rounded-2xl shadow-lg flex items-center gap-2 text-sm animate-bounce"
+          >
+            <SparklesIcon className="w-4 h-4" />
+            发现 {discoverCount} 条新资料
+          </button>
+        </div>
+      )}
+
+      {/* 发现资料面板（浮动非模态） */}
       {showDiscoverPanel && (
-        <div className="px-4 mt-4">
-          <DiscoverPanel
-            courseId={courseId || ''}
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <DiscoverResultsPanel
             results={discoverResults}
-            visible={showDiscoverPanel}
+            onImport={handleImportMore}
             onClose={() => setShowDiscoverPanel(false)}
-            onImportComplete={() => {}}
-            onReSearch={handleReSearch}
           />
         </div>
       )}
