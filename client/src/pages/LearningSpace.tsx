@@ -103,10 +103,11 @@ const LearningSpace = () => {
     discoverApi.start(courseId, course.originalQuestion).catch(() => {})
   }, [courseId, course?.originalQuestion])
 
-  // SSE 监听 discover_ready → 浮动提示
+  // SSE 监听：discover_ready / graph_updated / controversy_ready
   useEffect(() => {
     if (!courseId) return
     const es = new EventSource(`/api/sse/stream/${courseId}`)
+
     es.addEventListener('discover_ready', (e: MessageEvent) => {
       try {
         const data = JSON.parse(e.data)
@@ -116,6 +117,24 @@ const LearningSpace = () => {
         }
       } catch {}
     })
+
+    es.addEventListener('graph_updated', (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data)
+        if (data.nodes) setGraphData(data)
+      } catch {}
+    })
+
+    es.addEventListener('controversy_ready', (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data)
+        if (data.controversies) {
+          setControversies(data.controversies)
+          setControError('')
+        }
+      } catch {}
+    })
+
     return () => es.close()
   }, [courseId])
 

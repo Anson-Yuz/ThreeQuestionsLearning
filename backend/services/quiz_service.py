@@ -41,9 +41,9 @@ class QuizService:
         return quizzes
 
     async def _generate_question(self, dimension: str, difficulty: float, context: str, question_num: int = 1) -> Optional[Dict]:
-        """生成单道题目"""
-        if not self.llm:
-            return self._mock_question(dimension, difficulty, question_num)
+        """生成单道题目 — LLM不可用或失败时返回None"""
+        if not self.llm or not context.strip():
+            return None
 
         prompt = f"""
 基于以下学习资料，为"{dimension}"认知层级生成第{question_num}道测评题目。
@@ -71,24 +71,11 @@ class QuizService:
 """
         try:
             result = await self.llm.chat(prompt)
-            return json.loads(result)
-        except:
-            return self._mock_question(dimension, difficulty, question_num)
-
-    def _mock_question(self, dimension: str, difficulty: float, question_num: int) -> Dict:
-        """生成模拟题目"""
-        return {
-            "id": f"question_{dimension}_{question_num}",
-            "dimension": dimension,
-            "bloom_level": dimension,
-            "difficulty": difficulty,
-            "question_type": self.QUESTION_TYPES[dimension][0],
-            "question": f"这是{dimension}层级的示例题目（第{question_num}题）。",
-            "options": ["选项A", "选项B", "选项C", "选项D"],
-            "correct_answer": "A",
-            "explanation": f"这是{dimension}层级的答案解析。",
-            "knowledge_points": ["知识点1"]
-        }
+            parsed = json.loads(result)
+            return parsed if parsed.get("question") else None
+        except Exception as e:
+            print(f"err: Quiz generation failed for {dimension}: {e}")
+            return None
 
     async def evaluate_answer(self, question: Dict, user_answer: str) -> Dict:
         """评估答案"""

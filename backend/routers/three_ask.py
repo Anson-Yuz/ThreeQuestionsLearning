@@ -75,41 +75,93 @@ async def detect_controversy(
     return {"status": "processing", "message": "争议分析已开始"}
 
 async def controversy_detection_background(course_id: str):
-    """后台争议检测"""
+    """后台争议检测 — 基于LLM从文档中提取真实学术争议"""
     print(f"正在分析课程 {course_id} 的争议点")
 
-    # 示例争议数据
-    controversies = [
-        {
-            "id": str(uuid.uuid4()),
-            "topic": "示例争议主题",
-            "pro_view": "正方观点示例",
-            "pro_evidence": "正方证据示例",
-            "con_view": "反方观点示例",
-            "con_evidence": "反方证据示例",
-            "confidence": 0.85
-        }
-    ]
+    controversies = []
+
+    try:
+        from services.llm_service import LLMService
+
+        # 获取所有文档内容
+        with get_db() as conn:
+            docs = conn.execute(
+                "SELECT id, title, content FROM documents WHERE course_id = ?",
+                (course_id,)
+            ).fetchall()
+
+        if len(docs) < 2:
+            print(f"  课程 {course_id} 资料不足 (需要>=2)，跳过争议分析")
+            return
+
+        combined = "\n\n".join([d["content"][:2000] for d in docs if d["content"]])
+
+        llm = LLMService()
+        llm.api_key = "fc-b94c7744b5224b9b936478131d275d7b"
+        prompt = f"""基于以下学习资料，分析其中存在的学术争议点或不同观点。
+
+学习资料：
+{combined[:5000]}
+
+请返回JSON数组（如果没有争议则返回空数组）：
+[
+  {{
+    "topic": "争议主题",
+    "pro_view": "正方核心观点",
+    "pro_evidence": "正方依据",
+    "con_view": "反方核心观点",
+    "con_evidence": "反方依据",
+    "confidence": 0.85
+  }}
+]"""
+
+        raw = await llm.chat(prompt, temperature=0.3, max_tokens=2048)
+        raw = raw.strip()
+        if raw.startswith("```"):
+            import re
+            raw = re.sub(r'^```\w*', '', raw)
+            raw = re.sub(r'```$', '', raw)
+        parsed = json.loads(raw)
+        if isinstance(parsed, list):
+            for item in parsed:
+                if item.get("topic"):
+                    controversies.append({
+                        "id": str(uuid.uuid4()),
+                        "topic": item["topic"],
+                        "pro_view": item.get("pro_view", ""),
+                        "pro_evidence": item.get("pro_evidence", ""),
+                        "con_view": item.get("con_view", ""),
+                        "con_evidence": item.get("con_evidence", ""),
+                        "confidence": float(item.get("confidence", 0.7))
+                    })
+    except Exception as e:
+        print(f"err: Controversy detection failed: {e}")
+        controversies = []
 
     # 保存到数据库
-    now = int(datetime.now().timestamp() * 1000)
-    with get_db() as conn:
-        for c in controversies:
-            conn.execute("""
-                INSERT OR REPLACE INTO controversies
-                (id, course_id, topic, pro_view, pro_evidence, con_view, con_evidence, confidence, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (c["id"], course_id, c["topic"], c["pro_view"], c["pro_evidence"],
-                  c["con_view"], c["con_evidence"], c["confidence"], now))
-        conn.commit()
+    if controversies:
+        now = int(datetime.now().timestamp() * 1000)
+        with get_db() as conn:
+            for c in controversies:
+                conn.execute("""
+                    INSERT OR REPLACE INTO controversies
+                    (id, course_id, topic, pro_view, pro_evidence, con_view, con_evidence, confidence, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (c["id"], course_id, c["topic"], c["pro_view"], c["pro_evidence"],
+                      c["con_view"], c["con_evidence"], c["confidence"], now))
+            conn.commit()
 
-    # 更新学习进度
-    with get_db() as conn:
-        conn.execute(
-            "UPDATE learning_progress SET q2_completed = 1, updated_at = ? WHERE course_id = ?",
-            (now, course_id)
-        )
-        conn.commit()
+        # 更新学习进度
+        with get_db() as conn:
+            conn.execute(
+                "UPDATE learning_progress SET q2_completed = 1, updated_at = ? WHERE course_id = ?",
+                (now, course_id)
+            )
+            conn.commit()
+
+    # 推送 SSE 事件
+    from routers.sse import push_event
+    push_event(course_id, "controversy_ready", {"controversies": controversies})
 
 @router.get("/controversy/{course_id}")
 async def get_controversies(course_id: str):

@@ -330,7 +330,7 @@ async def start_discover(req: dict, background_tasks: BackgroundTasks):
 
 
 @router.post("/import-urls")
-async def import_urls(req: ImportRequest):
+async def import_urls(req: ImportRequest, background_tasks: BackgroundTasks):
     """批量导入 URL 到知识库（支持自动创建课程）"""
     urls = req.urls
     course_id = req.course_id
@@ -363,6 +363,10 @@ async def import_urls(req: ImportRequest):
     imported = [r for r in results if r["status"] == "imported"]
     failed = [r for r in results if r["status"] == "failed"]
 
+    # 导入完成后，异步触发图谱更新 + 争议分析
+    if len(imported) > 0:
+        background_tasks.add_task(_update_graph_and_controversy, course_id)
+
     return {
         "imported": len(imported),
         "failed": len(failed),
@@ -371,3 +375,48 @@ async def import_urls(req: ImportRequest):
         "course_id": course_id,
         "details": failed
     }
+
+
+async def _update_graph_and_controversy(course_id: str):
+    """后台：导入资料后更新知识图谱 + 触发争议分析"""
+    try:
+        from services.llm_service import LLMService
+        from services.graph_service import GraphService
+
+        # 获取所有文档
+        with get_db() as conn:
+            rows = conn.execute(
+                "SELECT id, title, content FROM documents WHERE course_id = ?",
+                (course_id,)
+            ).fetchall()
+            docs = [{"id": r["id"], "title": r["title"], "content": r["content"] or ""} for r in rows]
+
+        if not docs:
+            return
+
+        # 1. 重新生成知识图谱
+        llm = LLMService()
+        llm.api_key = "fc-b94c7744b5224b9b936478131d275d7b"
+        gs = GraphService(llm)
+        graph = await gs.generate_graph(course_id, docs)
+
+        # 保存图谱
+        now = int(datetime.now().timestamp() * 1000)
+        with get_db() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO knowledge_graphs (course_id, graph_data, updated_at) VALUES (?, ?, ?)",
+                (course_id, json.dumps(graph, ensure_ascii=False), now)
+            )
+            conn.commit()
+
+        push_event(course_id, "graph_updated", graph)
+
+        # 2. 触发争议分析（内部会推送 controversy_ready SSE 事件）
+        if len(docs) >= 2:
+            from routers.three_ask import controversy_detection_background
+            await controversy_detection_background(course_id)
+
+        print(f"[import] 课程 {course_id} 图谱+争议更新完成")
+
+    except Exception as e:
+        print(f"[import] 图谱/争议更新失败: {e}")
