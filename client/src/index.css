@@ -126,4 +126,34 @@ body {
   background: rgba(0, 0, 0, 0.7);
 }
 
+/* 个人中心功能列表 */
+.function-list {
+  background: var(--bg-secondary);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.function-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px;
+  background: transparent;
+  border-bottom: 0.5px solid var(--separator);
+  transition: background 0.2s;
+}
+.function-item:last-child {
+  border-bottom: none;
+}
+.function-item:active {
+  background: var(--bg-tertiary);
+}
+
+/* 个人中心容器 */
+.profile-container {
+  padding: 24px 20px 32px;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
 /* Tailwind dark: utility classes support */
