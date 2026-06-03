@@ -59,6 +59,32 @@ const Profile = () => {
         </div>
       </div>
 
+      {/* 周学习趋势 — 修复"周周周"：完整显示日名称 */}
+      <div className="page-container mt-4">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm">
+          <h2 className="text-base font-semibold text-gray-900 dark:text-white mb-3">周学习趋势</h2>
+          <div className="flex items-end justify-between h-24 gap-1">
+            {[
+              { day: '周一', value: 0.45 },
+              { day: '周二', value: 0.60 },
+              { day: '周三', value: 0.30 },
+              { day: '周四', value: 0.90 },
+              { day: '周五', value: 0.40 },
+              { day: '周六', value: 0.75 },
+              { day: '周日', value: 0.55 },
+            ].map((item, idx) => (
+              <div key={idx} className="flex-1 flex flex-col items-center gap-1">
+                <div
+                  className="w-full bg-gradient-to-t from-blue-500 to-blue-400 rounded-t"
+                  style={{ height: `${item.value * 100}%` }}
+                />
+                <span className="text-[10px] text-gray-400">{item.day}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
       {/* 功能列表 — iOS 风格 */}
       <div className="page-container mt-4">
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
