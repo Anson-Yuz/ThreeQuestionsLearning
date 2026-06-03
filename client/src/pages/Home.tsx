@@ -18,12 +18,25 @@ const Home = () => {
 
   // 搜索 & 导入状态
   const [isSearching, setIsSearching] = useState(false)
+  const [searchSeconds, setSearchSeconds] = useState(0)
   const [searchResults, setSearchResults] = useState<DiscoverResult[]>([])
   const [showResults, setShowResults] = useState(false)
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     fetchCourses()
   }, [fetchCourses])
+
+  // 清理定时器
+  useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current) }, [])
+
+  const stopTimer = useCallback(() => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current)
+      timerRef.current = null
+    }
+    setSearchSeconds(0)
+  }, [])
 
   // 单按钮流程：搜索 → 展示结果 → 导入 → 自动跳转
   const handleSearchAndLearn = useCallback(async (e: React.FormEvent) => {
@@ -32,6 +45,8 @@ const Home = () => {
     if (!q || isSearching) return
 
     setIsSearching(true)
+    setSearchSeconds(0)
+    timerRef.current = setInterval(() => setSearchSeconds((s) => s + 1), 1000)
     try {
       const res = await discoverApi.syncSearch(q)
       setSearchResults(res.results)
@@ -40,9 +55,14 @@ const Home = () => {
       setSearchResults([])
       setShowResults(true)
     } finally {
+      stopTimer()
       setIsSearching(false)
     }
-  }, [searchValue, isSearching])
+  }, [searchValue, isSearching, stopTimer])
+
+  const handleCloseResults = useCallback(() => {
+    setShowResults(false)
+  }, [])
 
   // 导入选中 → 自动创建课程 → 跳转学习空间
   const handleImportAndGo = useCallback(async (urls: string[]) => {
@@ -101,9 +121,9 @@ const Home = () => {
               <button
                 type="submit"
                 disabled={!searchValue.trim() || isSearching}
-                className="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-1.5 bg-blue-500 text-white text-sm rounded-xl disabled:opacity-40"
+                className="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-1.5 bg-blue-500 text-white text-sm rounded-xl disabled:opacity-40 min-w-[80px]"
               >
-                {isSearching ? '搜索中...' : '搜索并学习'}
+                {isSearching ? `搜索中 ${searchSeconds}s` : '搜索'}
               </button>
             </div>
           </form>
@@ -163,7 +183,7 @@ const Home = () => {
           results={searchResults}
           loading={isSearching}
           onImport={handleImportAndGo}
-          onClose={() => setShowResults(false)}
+          onClose={handleCloseResults}
         />
       )}
 
