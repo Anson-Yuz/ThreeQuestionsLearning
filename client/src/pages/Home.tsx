@@ -96,13 +96,21 @@ const Home = () => {
           <span className="text-sm text-gray-400">{activeCourses.length} 个课程</span>
         </div>
 
-        {activeCourses.length === 0 && (
+        {activeCourses.length === 0 && error && (
+          <EmptyState
+            title="无法载入"
+            description="请检查网络后重试"
+            action="重试"
+            onAction={() => fetchCourses()}
+            loading={loading}
+          />
+        )}
+        {activeCourses.length === 0 && !error && (
           <EmptyState
             title="尚无课程"
             description="搜索问题或浏览推荐，开始学习"
-            action={error ? '重试' : '去搜索'}
-            onAction={error ? () => fetchCourses() : () => searchInputRef.current?.focus()}
-            error={error || undefined}
+            action="去搜索"
+            onAction={() => searchInputRef.current?.focus()}
             loading={loading}
           />
         )}
