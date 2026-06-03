@@ -83,50 +83,14 @@ async def web_search_background(course_id: str, query: str):
             push_event(course_id, "discover_ready", {"results": cached, "cached": True})
             return
 
-    # 2. DuckDuckGo 搜索
-    try:
-        async with httpx.AsyncClient(timeout=SEARCH_TIMEOUT) as client:
-            resp = await client.get(
-                "https://html.duckduckgo.com/html/",
-                params={"q": query},
-                headers={"User-Agent": USER_AGENT}
-            )
-            resp.raise_for_status()
-    except Exception as e:
-        push_event(course_id, "discover_ready", {"results": [], "error": f"搜索失败: {str(e)}"})
-        return
+    # 2. 搜索
+    ranked = await _search_web(query)
 
-    soup = BeautifulSoup(resp.text, 'lxml')
-    raw_results = []
-    for item in soup.select('.result'):
-        title_el = item.select_one('.result__title a')
-        snippet_el = item.select_one('.result__snippet')
-        if title_el:
-            href = title_el.get('href', '')
-            # DuckDuckGo 的链接格式: //duckduckgo.com/l/?uddg=REAL_URL&...
-            if 'uddg=' in href:
-                from urllib.parse import parse_qs
-                parsed = urlparse(href)
-                qs = parse_qs(parsed.query)
-                href = qs.get('uddg', [href])[0]
-            if _is_private_url(href):
-                continue
-            raw_results.append({
-                "url": href,
-                "title": title_el.get_text(strip=True),
-                "snippet": snippet_el.get_text(strip=True) if snippet_el else ""
-            })
-
-    if not raw_results:
+    if not ranked:
         push_event(course_id, "discover_ready", {"results": [], "message": "未找到相关资料"})
         return
 
-    raw_results = raw_results[:15]
-
-    # 3. LLM 批量打分
-    ranked = await _rank_results(query, raw_results)
-
-    # 4. 存入缓存 + 推送
+    # 3. 存入缓存 + 推送
     with get_db() as conn:
         conn.execute(
             "INSERT OR REPLACE INTO search_cache (course_id, results, created_at) VALUES (?, ?, ?)",
@@ -264,42 +228,70 @@ async def _fetch_and_store_url(course_id: str, url: str, sem: asyncio.Semaphore)
 # ====== API 端点 ======
 
 async def _search_web(query: str) -> list:
-    """同步执行网络搜索（DuckDuckGo + LLM排序），返回结果列表"""
-    try:
-        async with httpx.AsyncClient(timeout=SEARCH_TIMEOUT) as client:
-            resp = await client.get(
-                "https://html.duckduckgo.com/html/",
-                params={"q": query},
-                headers={"User-Agent": USER_AGENT}
-            )
-            resp.raise_for_status()
-    except Exception as e:
-        return []
-
-    soup = BeautifulSoup(resp.text, 'lxml')
+    """网络搜索：优先使用 ddgs 库，失败回退到 HTML 解析"""
     raw_results = []
-    for item in soup.select('.result'):
-        title_el = item.select_one('.result__title a')
-        snippet_el = item.select_one('.result__snippet')
-        if title_el:
-            href = title_el.get('href', '')
-            if 'uddg=' in href:
-                from urllib.parse import parse_qs
-                parsed = urlparse(href)
-                qs = parse_qs(parsed.query)
-                href = qs.get('uddg', [href])[0]
-            if _is_private_url(href):
-                continue
-            raw_results.append({
-                "url": href,
-                "title": title_el.get_text(strip=True),
-                "snippet": snippet_el.get_text(strip=True) if snippet_el else ""
-            })
+
+    # 1. 尝试 ddgs 库
+    try:
+        from concurrent.futures import ThreadPoolExecutor
+        def _ddgs_search():
+            from ddgs import DDGS
+            results = []
+            with DDGS() as ddgs:
+                for r in ddgs.text(query, max_results=15):
+                    if not _is_private_url(r.get("href", "")):
+                        results.append({
+                            "url": r.get("href", ""),
+                            "title": r.get("title", ""),
+                            "snippet": r.get("body", "")
+                        })
+            return results
+        with ThreadPoolExecutor() as pool:
+            raw_results = await asyncio.get_event_loop().run_in_executor(pool, _ddgs_search)
+    except Exception as e:
+        print(f"[search] ddgs failed: {e}")
+
+    # 2. 回退：HTML 解析
+    if not raw_results:
+        try:
+            async with httpx.AsyncClient(timeout=SEARCH_TIMEOUT) as client:
+                resp = await client.get(
+                    "https://html.duckduckgo.com/html/",
+                    params={"q": query},
+                    headers={"User-Agent": USER_AGENT}
+                )
+                resp.raise_for_status()
+            soup = BeautifulSoup(resp.text, 'lxml')
+            for item in soup.select('.result'):
+                title_el = item.select_one('.result__title a')
+                snippet_el = item.select_one('.result__snippet')
+                if title_el:
+                    href = title_el.get('href', '')
+                    if 'uddg=' in href:
+                        from urllib.parse import parse_qs
+                        parsed = urlparse(href)
+                        qs = parse_qs(parsed.query)
+                        href = qs.get('uddg', [href])[0]
+                    if not _is_private_url(href):
+                        raw_results.append({
+                            "url": href,
+                            "title": title_el.get_text(strip=True),
+                            "snippet": snippet_el.get_text(strip=True) if snippet_el else ""
+                        })
+        except Exception as e:
+            print(f"[search] HTML fallback failed: {e}")
 
     if not raw_results:
         return []
 
-    return await _rank_results(query, raw_results[:15])
+    # LLM 打分排序
+    try:
+        return await _rank_results(query, raw_results[:15])
+    except Exception as e:
+        print(f"[search] LLM ranking failed: {e}, returning raw")
+        for r in raw_results:
+            r["score"] = 0.5
+        return raw_results[:10]
 
 
 # ====== API 端点 ======
