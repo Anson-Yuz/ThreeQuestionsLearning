@@ -46,13 +46,13 @@ const Profile = () => {
         <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-sm">
           <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-4 uppercase tracking-wide">学习数据</h2>
           <div className="grid grid-cols-2 gap-3">
-            <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-4 text-white">
-              <div className="text-2xl font-bold">{activeCount}</div>
-              <div className="text-blue-100 text-sm mt-1">课程数量</div>
+            <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-4">
+              <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{activeCount}</div>
+              <div className="text-blue-500/60 dark:text-blue-400/60 text-sm mt-1">课程数量</div>
             </div>
-            <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-4 text-white">
-              <div className="text-2xl font-bold">{completedCount}</div>
-              <div className="text-green-100 text-sm mt-1">已完成</div>
+            <div className="bg-green-50 dark:bg-green-900/20 rounded-xl p-4">
+              <div className="text-2xl font-bold text-green-600 dark:text-green-400">{completedCount}</div>
+              <div className="text-green-500/60 dark:text-green-400/60 text-sm mt-1">已完成</div>
             </div>
           </div>
         </div>

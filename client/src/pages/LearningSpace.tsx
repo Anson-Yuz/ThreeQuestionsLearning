@@ -1,9 +1,10 @@
-import { memo, useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { NavBar } from '../components/layout/NavBar'
 import KnowledgeGraph from '../components/business/KnowledgeGraph'
 import ControversyPanel from '../components/business/ControversyPanel'
 import QuizEntrance from '../components/business/QuizEntrance'
+import EmptyState from '../components/ui/EmptyState'
 import { RefreshIcon, GlobeIcon, DocumentIcon } from '../components/ui/Icons'
 import { coursesApi, Course } from '../api/courses'
 import { threeAskApi, KnowledgeGraph as GraphData } from '../api/threeAsk'
@@ -15,22 +16,8 @@ const friendlyMsg = (err: unknown): string => {
     if (err.message.includes('404')) return '课程不存在'
     return err.message
   }
-  return '加载失败，请重试'
+  return '加载失败'
 }
-
-const ErrorBlock = ({ msg, onRetry }: { msg: string; onRetry: () => void }) => (
-  <div className="flex flex-col items-center justify-center py-20 gap-4">
-    <p className="text-gray-400 dark:text-gray-500 text-sm">{msg}</p>
-    <button onClick={onRetry} className="px-4 py-2 bg-blue-500 text-white text-sm rounded-xl">重试</button>
-  </div>
-)
-
-const EmptyBlock = ({ msg, hint }: { msg: string; hint: string }) => (
-  <div className="flex flex-col items-center justify-center py-20 gap-2">
-    <p className="text-gray-400 dark:text-gray-500 text-base">{msg}</p>
-    <p className="text-gray-300 dark:text-gray-600 text-sm">{hint}</p>
-  </div>
-)
 
 const LearningSpace = () => {
   const { courseId } = useParams<{ courseId: string }>()
@@ -102,24 +89,19 @@ const LearningSpace = () => {
 
   const handleBack = () => navigate('/home')
 
-  // ====== 初始加载中 ======
-  if (initialLoading) {
+  // ====== 初始加载中 / 页面级错误 ======
+  if (initialLoading || pageError) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-black flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-10 h-10 border-3 border-gray-200 border-t-blue-500 rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-400 text-sm">加载课程中...</p>
-        </div>
-      </div>
-    )
-  }
-
-  // ====== 页面级错误 ======
-  if (pageError) {
-    return (
-      <div className="min-h-screen bg-gray-50 dark:bg-black flex flex-col page-container">
+      <div className="min-h-screen bg-gray-50 dark:bg-black flex flex-col">
         <NavBar title="课程" showBack onLeftClick={handleBack} />
-        <ErrorBlock msg={pageError} onRetry={() => { if (courseId) coursesApi.get(courseId).then(setCourse).catch(() => {}) }} />
+        <EmptyState
+          title={pageError ? '无法载入' : '载入中…'}
+          description={pageError ? '请检查网络后重试' : undefined}
+          action={pageError ? '重试' : undefined}
+          onAction={pageError ? () => { setPageError(''); if (courseId) coursesApi.get(courseId).then(setCourse).catch((e) => setPageError(friendlyMsg(e))) } : undefined}
+          error={pageError || undefined}
+          loading={initialLoading}
+        />
       </div>
     )
   }
@@ -178,16 +160,11 @@ const LearningSpace = () => {
             </div>
 
             {graphError ? (
-              <ErrorBlock msg={graphError} onRetry={handleRefreshGraph} />
+              <EmptyState title="无法载入" description="请检查网络后重试" action="重试" onAction={handleRefreshGraph} error={graphError} />
             ) : graphLoading ? (
-              <div className="w-full h-[400px] bg-gray-100 dark:bg-gray-800 rounded-2xl flex items-center justify-center">
-                <div className="text-center">
-                  <div className="w-12 h-12 border-3 border-gray-200 border-t-blue-500 rounded-full animate-spin mx-auto mb-3" />
-                  <p className="text-gray-500 text-sm">正在分析知识结构...</p>
-                </div>
-              </div>
+              <EmptyState title="载入中…" loading />
             ) : graphData.nodes.length === 0 ? (
-              <EmptyBlock msg="暂无知识图谱数据" hint="上传学习资料后点击刷新生成知识图谱" />
+              <EmptyState title="暂无图谱" description="上传学习资料后点击刷新" action="刷新" onAction={handleRefreshGraph} />
             ) : (
               <KnowledgeGraph data={graphData} loading={false} />
             )}
@@ -201,7 +178,7 @@ const LearningSpace = () => {
               <p className="text-sm text-gray-500 mt-1">AI自动分析资料中的学术争议</p>
             </div>
             {controError ? (
-              <ErrorBlock msg={controError} onRetry={handleLoadControversy} />
+              <EmptyState title="无法载入" description="请检查网络后重试" action="重试" onAction={handleLoadControversy} error={controError} />
             ) : (
               <ControversyPanel controversies={controversies} loading={controLoading} />
             )}

@@ -1,8 +1,9 @@
-import { memo, useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { NavBar } from '../components/layout/NavBar'
 import QuizPlayer from '../components/business/QuizPlayer'
 import RadarChart from '../components/business/RadarChart'
+import EmptyState from '../components/ui/EmptyState'
 import { CheckCircleIcon, ArrowRightIcon } from '../components/ui/Icons'
 import { threeAskApi } from '../api/threeAsk'
 
@@ -96,17 +97,18 @@ const QuizCenter = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-black flex items-center justify-center">
-        <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen bg-gray-50 dark:bg-black flex flex-col">
+        <NavBar title="测评中心" showBack onLeftClick={handleBack} />
+        <EmptyState title="载入中…" loading />
       </div>
     )
   }
 
   if (questions.length === 0 && !loading) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-black flex flex-col items-center justify-center gap-4">
-        <p className="text-gray-400">暂无测评题目</p>
-        <button onClick={handleBack} className="text-blue-500 underline">返回学习空间</button>
+      <div className="min-h-screen bg-gray-50 dark:bg-black flex flex-col">
+        <NavBar title="测评中心" showBack onLeftClick={handleBack} />
+        <EmptyState title="暂无测评" description="先学习相关课程，测评将自动生成" action="去学习" onAction={handleBack} />
       </div>
     )
   }

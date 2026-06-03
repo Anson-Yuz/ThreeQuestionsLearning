@@ -1,12 +1,14 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { SearchIcon, UploadIcon } from '../components/ui/Icons'
 import CourseCard from '../components/business/CourseCard'
 import ActionSheet from '../components/ui/ActionSheet'
+import EmptyState from '../components/ui/EmptyState'
 import { useCourseStore } from '../stores/courseStore'
 
 const Home = () => {
   const navigate = useNavigate()
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const { courses, loading, error, fetchCourses, createCourse, deleteCourse, archiveCourse } = useCourseStore()
   const [searchValue, setSearchValue] = useState('')
   const [isCreating, setIsCreating] = useState(false)
@@ -68,6 +70,7 @@ const Home = () => {
                 <SearchIcon className="w-5 h-5 text-gray-400" />
               </div>
               <input
+                ref={searchInputRef}
                 type="text"
                 value={searchValue}
                 onChange={(e) => setSearchValue(e.target.value)}
@@ -93,23 +96,15 @@ const Home = () => {
           <span className="text-sm text-gray-400">{activeCourses.length} 个课程</span>
         </div>
 
-        {loading && activeCourses.length === 0 && (
-          <div className="flex items-center justify-center py-20">
-            <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-          </div>
-        )}
-
-        {!loading && activeCourses.length === 0 && (
-          <div className="text-center py-20">
-            <p className="text-gray-400 dark:text-gray-500 text-lg mb-2">还没有课程</p>
-            <p className="text-gray-400 dark:text-gray-500 text-sm">在上方搜索框输入你想学习的问题</p>
-          </div>
-        )}
-
-        {error && (
-          <div className="text-center py-4">
-            <p className="text-red-500 text-sm">{error}</p>
-          </div>
+        {activeCourses.length === 0 && (
+          <EmptyState
+            title="尚无课程"
+            description="搜索问题或浏览推荐，开始学习"
+            action={error ? '重试' : '去搜索'}
+            onAction={error ? () => fetchCourses() : () => searchInputRef.current?.focus()}
+            error={error || undefined}
+            loading={loading}
+          />
         )}
 
         <div className="space-y-3">

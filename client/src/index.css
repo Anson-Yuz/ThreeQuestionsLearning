@@ -116,38 +116,8 @@ body {
   width: 100%;
 }
 
-/* 毛玻璃效果 */
-.glass {
-  backdrop-filter: blur(10px) saturate(180%);
-  -webkit-backdrop-filter: blur(10px) saturate(180%);
-  background: rgba(255, 255, 255, 0.7);
-}
-.dark .glass {
-  background: rgba(0, 0, 0, 0.7);
-}
-
-/* 个人中心功能列表 */
-.function-list {
-  background: var(--bg-secondary);
-  border-radius: 16px;
-  overflow: hidden;
-}
-
-.function-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px;
-  background: transparent;
-  border-bottom: 0.5px solid var(--separator);
-  transition: background 0.2s;
-}
-.function-item:last-child {
-  border-bottom: none;
-}
-.function-item:active {
-  background: var(--bg-tertiary);
-}
+/* 卡片轻微模糊（知识图谱图例等场景） */
+.backdrop-blur-sm { backdrop-filter: blur(4px); }
 
 /* 个人中心容器 */
 .profile-container {
