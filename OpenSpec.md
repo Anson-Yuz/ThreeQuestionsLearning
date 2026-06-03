@@ -10111,7 +10111,120 @@ npm run dev
 
 ---
 
-## 18. 前端业务组件层
+## 十八、OpenSpec 100%完成度保障流程
+
+> 本章定义从开发到交付的完整闭环流程，确保项目严格按照 OpenSpec 规范 100% 完成。
+
+### 18.1 流程总览
+
+```
+┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
+│  1.开发  │───→│  2.检测  │───→│  3.定位  │───→│  4.修复  │───→│  5.验证  │
+│  编码    │    │  check   │    │  缺失项  │    │  auto-fix│    │  full    │
+│          │    │          │    │          │    │          │    │  check   │
+└──────────┘    └──────────┘    └──────────┘    └──────────┘    └────┬─────┘
+      ↑                                                               │
+      │                                    失败                       │
+      └───────────────────────────────────────────────────────────────┘
+                                      │
+                                      │ 通过
+                                      ▼
+                              ┌──────────────┐     ┌──────────────┐
+                              │  6.归档      │────→│  7.提交      │
+                              │  更新 §21    │     │  git commit  │
+                              │  修复补丁    │     │  + push      │
+                              └──────────────┘     └──────────────┘
+```
+
+### 18.2 核心指标
+
+| 指标 | 目标值 | 检测方式 | 对应脚本 |
+|------|--------|---------|---------|
+| 文件完整性 | 100% | 对照规格逐项检查 | `check-completeness.sh` |
+| TypeScript 类型 | 零错误 | `tsc --noEmit` | `full-check.sh` [2.1] |
+| Python 语法 | 零错误 | `compileall` | `full-check.sh` [2.3] |
+| 前端构建 | 成功 | `npm run build` | `full-check.sh` [3.1] |
+| API 冒烟 | 全部响应 | curl 轮询 + 端点测试 | `full-check.sh` [5] |
+| 单元测试 | ≥80% 通过率 | `pytest` | `full-check.sh` [6] |
+| 路由完整性 | 6条路由 | grep App.tsx | `full-check.sh` [7.4] |
+| 暗黑模式 | CSS变量 + Store | grep CSS + 文件检测 | `full-check.sh` [7.3] |
+| 环境合规 | API Key 非占位 | 正则匹配 | `full-check.sh` [1.4] |
+| 文档归档 | >100字节 | wc -c | `full-check.sh` [7.2] |
+
+### 18.3 阶段门禁
+
+每个实现阶段完成后，必须通过对应门禁才能进入下一阶段。
+
+| 阶段 | 内容 | 门禁 |
+|------|------|------|
+| 阶段0 | 环境对齐 | `bash scripts/auto-fix.sh` 通过 |
+| 阶段1 | 后端基础层 | `python3 -m compileall backend/` 零错误 |
+| 阶段2 | 后端路由层 | API端点 grep 全部命中 |
+| 阶段3 | 后端服务层 | `python3 -m compileall backend/` 零错误 |
+| 阶段4 | 前端Store+API | `npx tsc --noEmit` 零错误 |
+| 阶段5 | 前端页面+路由 | `npm run build` 成功 |
+| 阶段6 | 配置+文档 | `check-completeness.sh` 文件检测全通过 |
+| 阶段7 | 测试 | `pytest` 21+用例通过 |
+| 阶段8 | 最终验收 | `full-check.sh` 0 失败项 |
+
+### 18.4 检测脚本说明
+
+#### check-completeness.sh（结构完整性）
+- 检测 10 大类共 96 项：文件存在性、数据库表定义、API 端点、import 路径、配置文件、文档、暗黑模式、组件复用、SSE 集成、iOS 适配
+- 运行时间：~2秒
+- 用途：快速定位缺失文件和配置
+
+#### auto-fix.sh（自动修复）
+- 自动创建缺失目录和 `__init__.py`
+- 修复 import 路径错误
+- 设置脚本执行权限
+- 用途：处理可自动修复的机械性问题
+
+#### full-check.sh（完整质量验证）
+- 8 个阶段全覆盖：环境准备→代码质量→构建验证→数据库→API冒烟→单元测试→结构完整性→清理
+- 运行时间：~30秒（含后端启动+API测试）
+- 生成 `openspec-report.json` 供 CI 解析
+- 用途：提交前最终验证
+
+### 18.5 Git 钩子集成
+
+```bash
+# pre-commit：提交前自动运行完整检测
+cp scripts/pre-commit-check.sh .git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit
+
+# pre-push：推送前再次运行 full-check.sh
+cp scripts/pre-commit-check.sh .git/hooks/pre-push
+chmod +x .git/hooks/pre-push
+```
+
+提交/推送被阻止时，运行 `bash scripts/full-check.sh` 查看具体失败项。
+
+### 18.6 归档协议
+
+每次完成一轮修复后，必须在 OpenSpec.md §22（修复补丁）中记录：
+
+1. **问题描述**：现象、严重程度、复现步骤
+2. **根因分析**：代码位置、逻辑错误
+3. **修复方案**：修改的文件、采取的措施
+4. **验证结果**：检测脚本输出摘要
+
+### 18.7 一键命令
+
+```bash
+# 完整检测
+bash scripts/full-check.sh && echo "✅ 可以提交" || echo "❌ 需要修复"
+
+# 自动修复 + 检测
+bash scripts/auto-fix.sh && bash scripts/full-check.sh
+
+# 查看检测报告
+cat openspec-report.json
+```
+
+---
+
+## 十九、前端业务组件层
 
 ### 18.1 知识图谱组件 (src/components/business/KnowledgeGraph.tsx)
 
@@ -10642,7 +10755,7 @@ npm run dev
 
 ---
 
-## 19. 配置文件层
+## 二十、配置文件层
 
 ### 19.1 后端环境变量配置 (backend/.env.example)
 
@@ -11162,7 +11275,7 @@ chmod +x start.sh
 
 ---
 
-## 20. 项目文档层
+## 二十一、项目文档层
 
 ### 20.1 README.md
 
@@ -12172,7 +12285,7 @@ cp backend/.env.example backend/.env
 
 ---
 
-## 21. 修复补丁
+## 二十二、修复补丁
 
 > 以下修复针对 OpenSpec 归档过程中发现的问题
 
@@ -13028,7 +13141,36 @@ def get_parser_service() -> ParserService:
     return _parser_service
 ```
 
-### 21.8 修复汇总
+### 21.8 修复8：搜索框IME冲突导致提前跳转
+
+**问题描述：** 首页搜索框使用 `onKeyDown` + Enter，与中文输入法IME确认键冲突，用户输入中文时每按Enter就触发导航跳转到知识图谱页面。且搜索创建的是假课程，未调用真实API。
+
+**修复文件：**
+- `client/src/pages/Home.tsx` — 改用 `<form onSubmit>` 替代 `onKeyDown`，添加独立搜索按钮
+- 通过 `useCourseStore.createCourse()` 调用真实API创建课程后跳转到真实 courseId
+
+### 21.9 修复9：清理测试数据残留 + Mock数据
+
+**问题描述：** `full-check.sh` API冒烟测试创建测试课程后未清理，导致数据库残留"OpenSpec 测试课程"数据。同时 Home/LearningSpace/QuizCenter 页面存在大量硬编码 mock 数据。
+
+**修复文件：**
+- `scripts/full-check.sh` — 在 [5.7] 步骤增加测试数据清理逻辑
+- `client/src/pages/Home.tsx` — 移除 mockCourses，改用 API 获取真实课程列表
+- `client/src/pages/LearningSpace.tsx` — 移除 mockGraphData/mockControversies，接入 threeAskApi
+- `client/src/pages/QuizCenter.tsx` — 移除 mockQuestions，接入 threeAskApi.generateQuiz()
+
+### 21.10 修复10：Electron 桌面打包 + 双击启动
+
+**问题描述：** 项目无法双击直接打开，需用户手动执行终端命令。新增 Electron 桌面打包方案实现"双击即用"。
+
+**修复文件：**
+- `electron/main.js` — Electron 主进程，开发模式用系统Python，生产模式内嵌Python启动后端
+- `electron/preload.js` — contextBridge 安全暴露平台信息
+- `electron/package.json` — electron-builder 配置（Win NSIS+Portable / Mac DMG+ZIP）
+- `client/vite.config.ts` — 添加 `base: './'` 支持 Electron file:// 协议
+- `start.command` — macOS 双击启动脚本（自动检查环境→安装依赖→启动服务→打开浏览器）
+
+### 21.11 修复汇总
 
 | 修复项 | 文件 | 操作 |
 |--------|------|------|
@@ -13040,10 +13182,13 @@ def get_parser_service() -> ParserService:
 | 修复5 | backend/services/chroma_client.py | 完整实现 |
 | 修复6 | backend/services/embedding_service.py | 完整实现 |
 | 修复7 | backend/services/parser_service.py | 完整实现 |
+| 修复8 | client/src/pages/Home.tsx | 搜索框IME冲突修复 + 接入真实API |
+| 修复9 | Home/LearningSpace/QuizCenter | 清理Mock数据 + full-check自动清理 |
+| 修复10 | electron/ + start.command | Electron桌面打包 + 双击启动 |
 
 ---
 
-## 二十二、桌面应用打包方案（Electron + 内嵌 Python）
+## 二十三、桌面应用打包方案（Electron + 内嵌 Python）
 
 ### 22.1 方案概述
 
@@ -13268,7 +13413,7 @@ cd scripts
 
 ---
 
-## 二十三、制作实现方案
+## 二十四、制作实现方案
 
 ### 23.1 整体开发流程概览
 
