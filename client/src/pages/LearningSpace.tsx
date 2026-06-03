@@ -5,9 +5,11 @@ import KnowledgeGraph from '../components/business/KnowledgeGraph'
 import ControversyPanel from '../components/business/ControversyPanel'
 import QuizEntrance from '../components/business/QuizEntrance'
 import EmptyState from '../components/ui/EmptyState'
+import DiscoverPanel from '../components/business/DiscoverPanel'
 import { RefreshIcon, GlobeIcon, DocumentIcon } from '../components/ui/Icons'
 import { coursesApi, Course } from '../api/courses'
 import { threeAskApi, KnowledgeGraph as GraphData } from '../api/threeAsk'
+import { discoverApi, DiscoverResult } from '../api/discover'
 
 const friendlyMsg = (err: unknown): string => {
   if (err instanceof Error) {
@@ -33,6 +35,8 @@ const LearningSpace = () => {
   const [controLoading, setControLoading] = useState(false)
   const [controError, setControError] = useState('')
   const [progress, setProgress] = useState(0)
+  const [discoverResults, setDiscoverResults] = useState<DiscoverResult[]>([])
+  const [showDiscoverPanel, setShowDiscoverPanel] = useState(false)
 
   // 加载课程信息 — 三态处理
   useEffect(() => {
@@ -86,6 +90,27 @@ const LearningSpace = () => {
     if (activeSection === 'graph') handleRefreshGraph()
     if (activeSection === 'controversy') handleLoadControversy()
   }, [activeSection, pageError, handleRefreshGraph, handleLoadControversy])
+
+  // SSE 监听 discover_ready 事件
+  useEffect(() => {
+    if (!courseId) return
+    const es = new EventSource(`/api/sse/stream/${courseId}`)
+    es.addEventListener('discover_ready', (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data)
+        if (data.results?.length > 0) {
+          setDiscoverResults(data.results)
+          setShowDiscoverPanel(true)
+        }
+      } catch {}
+    })
+    return () => es.close()
+  }, [courseId])
+
+  const handleReSearch = useCallback(async () => {
+    if (!courseId || !course?.originalQuestion) return
+    discoverApi.start(courseId, course.originalQuestion).catch(() => {})
+  }, [courseId, course?.originalQuestion])
 
   const handleBack = () => navigate('/home')
 
@@ -191,6 +216,20 @@ const LearningSpace = () => {
           </div>
         )}
       </div>
+
+      {/* 发现资料面板 */}
+      {showDiscoverPanel && (
+        <div className="px-4 mt-4">
+          <DiscoverPanel
+            courseId={courseId || ''}
+            results={discoverResults}
+            visible={showDiscoverPanel}
+            onClose={() => setShowDiscoverPanel(false)}
+            onImportComplete={() => {}}
+            onReSearch={handleReSearch}
+          />
+        </div>
+      )}
 
       {/* 底部知识库 */}
       <div className="bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800 p-4">

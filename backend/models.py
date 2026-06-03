@@ -153,3 +153,15 @@ class SuccessResponse(BaseModel):
 class ErrorResponse(BaseModel):
     error: str
     detail: Optional[str] = None
+
+# ============================================
+# 发现资料相关模型
+# ============================================
+
+class SearchDiscoverRequest(BaseModel):
+    query: str
+
+class ImportRequest(BaseModel):
+    urls: List[str]
+    course_id: Optional[str] = None
+    query: Optional[str] = None

@@ -24,6 +24,12 @@ def get_db():
     finally:
         conn.close()
 
+def _safe_add_column(conn, table: str, column: str, col_type: str):
+    """安全添加列 — 使用 PRAGMA 检查避免重复报错"""
+    cols = [r["name"] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+    if column not in cols:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+
 def init_db():
     """初始化数据库：创建所有表"""
     ensure_data_dir()
@@ -52,6 +58,22 @@ def init_db():
                 file_path TEXT,
                 file_type TEXT,
                 source TEXT,
+                source_url TEXT,
+                source_type TEXT DEFAULT 'user_upload',
+                created_at INTEGER,
+                FOREIGN KEY (course_id) REFERENCES courses(id)
+            )
+        """)
+
+        # 安全添加列（如果表已存在但缺少新列）
+        _safe_add_column(conn, "documents", "source_url", "TEXT")
+        _safe_add_column(conn, "documents", "source_type", "TEXT DEFAULT 'user_upload'")
+
+        # 搜索缓存表
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS search_cache (
+                course_id TEXT PRIMARY KEY,
+                results TEXT,
                 created_at INTEGER,
                 FOREIGN KEY (course_id) REFERENCES courses(id)
             )
