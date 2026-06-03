@@ -183,13 +183,60 @@ async def delete_document(doc_id: str):
 
 @router.post("/search")
 async def semantic_search(req: SearchRequest):
-    """语义检索知识库"""
-    return {
-        "results": [
-            {
-                "content": "这是检索结果的示例内容",
-                "score": 0.95,
-                "metadata": {"source": "AI补充资料", "title": "示例文档"}
-            }
-        ]
-    }
+    """语义检索知识库 — 先尝试 ChromaDB 向量检索，回退到 SQLite 关键词匹配"""
+
+    results = []
+
+    # 1. 尝试 ChromaDB 向量检索
+    try:
+        from services.chroma_client import ChromaClient
+        from services.embedding_service import EmbeddingService
+
+        embedder = EmbeddingService()
+        query_vec = await embedder.embed(req.query)
+
+        chroma = ChromaClient()
+        chroma_results = await chroma.search(req.course_id, query_vec, req.top_k)
+
+        if chroma_results:
+            for r in chroma_results[:req.top_k]:
+                results.append({
+                    "content": r.get("content", ""),
+                    "score": round(r.get("score", 0), 4),
+                    "metadata": r.get("metadata", {}),
+                })
+    except Exception as e:
+        print(f"[search] ChromaDB 检索失败，回退到 SQLite: {e}")
+
+    # 2. 回退：SQLite 关键词匹配
+    if not results:
+        with get_db() as conn:
+            # 用 LIKE 做简单关键词匹配
+            like_q = f"%{req.query}%"
+            rows = conn.execute(
+                "SELECT content, title, source FROM documents WHERE course_id = ? AND content LIKE ? LIMIT ?",
+                (req.course_id, like_q, req.top_k),
+            ).fetchall()
+
+            for row in rows:
+                # 截取匹配片段
+                content = row["content"] or ""
+                idx = content.find(req.query)
+                start = max(0, idx - 40)
+                end = min(len(content), idx + len(req.query) + 40)
+                snippet = content[start:end]
+                if start > 0:
+                    snippet = "..." + snippet
+                if end < len(content):
+                    snippet = snippet + "..."
+
+                results.append({
+                    "content": snippet or content[:200],
+                    "score": 0.5,
+                    "metadata": {"source": row["source"], "title": row["title"]},
+                })
+
+    if not results:
+        return {"results": [], "message": "未找到相关资料，尝试换个关键词吧"}
+
+    return {"results": results, "total": len(results)}

@@ -281,7 +281,20 @@ else
 fi
 echo ""
 
-echo "[5.7] 关闭后端服务..."
+echo "[5.7] 清理测试数据并关闭后端服务..."
+# 删除测试创建的课程
+if [ -f "backend/data/courses.db" ]; then
+    python3 -c "
+import sqlite3
+conn = sqlite3.connect('backend/data/courses.db')
+conn.execute(\"DELETE FROM courses WHERE title LIKE '%测试%'\")
+conn.execute(\"DELETE FROM documents WHERE title LIKE '%OpenSpec%'\")
+conn.commit()
+conn.close()
+print('测试数据已清理')
+" 2>/dev/null || true
+fi
+# 关闭后端
 if ps -p $BACKEND_PID > /dev/null 2>&1; then
     kill $BACKEND_PID 2>/dev/null
     wait $BACKEND_PID 2>/dev/null

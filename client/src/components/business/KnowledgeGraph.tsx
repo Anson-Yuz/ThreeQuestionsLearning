@@ -4,7 +4,7 @@ import * as echarts from 'echarts'
 interface GraphNode {
   id: string
   name: string
-  description: string
+  description?: string
   bloomLevel: string
   difficulty: number
   isThresholdConcept: boolean
@@ -51,6 +51,15 @@ const getNodeSize = (node: GraphNode) => {
 export const KnowledgeGraph = memo(({ data, loading, onNodeClick }: KnowledgeGraphProps) => {
   const chartRef = useRef<HTMLDivElement>(null)
   const chartInstance = useRef<echarts.ECharts | null>(null)
+
+  // 防御：data 为 null/undefined 或无节点时显示空状态
+  if (!data || !data.nodes || data.nodes.length === 0) {
+    return (
+      <div className="w-full h-[400px] bg-gray-50 dark:bg-gray-800/50 rounded-2xl flex items-center justify-center">
+        <p className="text-gray-400 dark:text-gray-500 text-sm">暂无知识图谱数据，上传资料后即可生成</p>
+      </div>
+    )
+  }
 
   useEffect(() => {
     if (!chartRef.current || loading) return

@@ -7,7 +7,7 @@ interface CourseCardProps {
   title: string
   keywords: string[]
   progress: number
-  status: 'active' | 'completed' | 'archived'
+  status: 'active' | 'completed' | 'archived' | 'deleted'
   threeAskProgress: {
     question1: boolean
     question2: boolean

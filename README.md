@@ -2,7 +2,39 @@
 
 > AI驱动的个性化学习工具 — 以用户提问为核心触发机制的智能学习系统
 
-## 快速开始
+## 如何打开程序
+
+**注意：不能直接双击 index.html 打开。** 这是一个前后端分离的 Web 应用，需要启动服务。
+
+### 首次使用（3步）
+
+**第1步：安装依赖**
+
+| 系统 | 操作 |
+|------|------|
+| Mac | 打开终端，进入项目目录，运行 `bash install.sh` |
+| Windows | 双击 `install.bat` |
+
+**第2步：配置 API Key**
+
+打开 `backend/.env`，将 `MINIMAX_API_KEY` 替换为你的真实 API Key（从 https://platform.minimaxi.com 获取）
+
+**第3步：启动程序**
+
+| 系统 | 操作 |
+|------|------|
+| Mac | **双击 `start.command`** 即可启动（首次可能需右键 → 打开） |
+| Windows | 双击 `start.bat` |
+
+启动后浏览器自动打开 **http://localhost:5173**。
+
+### 后续使用
+
+第二次使用只需执行第3步（启动程序）即可。
+
+---
+
+## 快速开始（命令行）
 
 ### 环境要求
 - Node.js 18+、Python 3.10+
@@ -11,22 +43,13 @@
 ### 安装
 
 ```bash
-# 自动安装
 bash install.sh       # Mac/Linux
 install.bat           # Windows
-
-# 或手动安装
-cd client && npm install
-cd ../backend && pip install -r requirements.txt
 ```
 
 ### 配置
 
-```bash
-# 后端环境变量
-cp backend/.env.example backend/.env
-# 编辑 backend/.env，设置 MINIMAX_API_KEY
-```
+编辑 `backend/.env`，设置 `MINIMAX_API_KEY` 为真实值。
 
 ### 启动
 
