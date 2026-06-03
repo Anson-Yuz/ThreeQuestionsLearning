@@ -26,7 +26,7 @@ def format_course(row) -> dict:
             "question3": False
         },
         "created_at": row["created_at"],
-        "last_accessed": row.get("updated_at", row["created_at"])
+        "last_accessed": row["updated_at"] or row["created_at"]
     }
 
 @router.post("/create", response_model=CourseResponse)

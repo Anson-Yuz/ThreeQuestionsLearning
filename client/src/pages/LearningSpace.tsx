@@ -12,7 +12,7 @@ import { threeAskApi, KnowledgeGraph as GraphData } from '../api/threeAsk'
 const friendlyMsg = (err: unknown): string => {
   if (err instanceof Error) {
     if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError'))
-      return '网络连接不稳定，请稍后重试'
+      return '加载失败'
     if (err.message.includes('404')) return '课程不存在'
     return err.message
   }
@@ -96,7 +96,6 @@ const LearningSpace = () => {
         <NavBar title="课程" showBack onLeftClick={handleBack} />
         <EmptyState
           title={pageError ? '无法载入' : '载入中…'}
-          description={pageError ? '请检查网络后重试' : undefined}
           loading={initialLoading}
         />
       </div>
@@ -157,7 +156,7 @@ const LearningSpace = () => {
             </div>
 
             {graphError ? (
-              <EmptyState title="无法载入" description="请检查网络后重试" />
+              <EmptyState title="无法载入" />
             ) : graphLoading ? (
               <EmptyState title="载入中…" loading />
             ) : graphData.nodes.length === 0 ? (
@@ -175,7 +174,7 @@ const LearningSpace = () => {
               <p className="text-sm text-gray-500 mt-1">AI自动分析资料中的学术争议</p>
             </div>
             {controError ? (
-              <EmptyState title="无法载入" description="请检查网络后重试" />
+              <EmptyState title="无法载入" />
             ) : (
               <ControversyPanel controversies={controversies} loading={controLoading} />
             )}

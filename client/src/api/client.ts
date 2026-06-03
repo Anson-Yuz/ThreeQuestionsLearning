@@ -65,9 +65,9 @@ class ApiClient {
       }
       const raw = (error as Error).message || '';
       if (raw.includes('Failed to fetch') || raw.includes('NetworkError')) {
-        throw { status: 0, message: '网络连接不稳定' };
+        throw { status: 0, message: '加载失败' };
       }
-      throw { status: 0, message: raw || '网络错误' };
+      throw { status: 0, message: raw || '加载失败' };
     }
   }
 
@@ -141,7 +141,7 @@ class ApiClient {
       };
 
       xhr.onerror = () => {
-        reject({ status: 0, message: '网络错误' });
+        reject({ status: 0, message: '加载失败' });
       };
 
       xhr.send(formData);

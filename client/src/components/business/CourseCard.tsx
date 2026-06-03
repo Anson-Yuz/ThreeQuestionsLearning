@@ -20,11 +20,11 @@ interface CourseCardProps {
 export const CourseCard = memo(({
   id,
   title,
-  keywords,
-  progress,
+  keywords = [],
+  progress = 0,
   status,
-  threeAskProgress,
-  lastAccessedAt,
+  threeAskProgress = { question1: false, question2: false, question3: false },
+  lastAccessedAt = 0,
   onLongPress,
 }: CourseCardProps) => {
   const navigate = useNavigate()

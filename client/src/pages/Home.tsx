@@ -99,7 +99,6 @@ const Home = () => {
         {activeCourses.length === 0 && error && (
           <EmptyState
             title="无法载入"
-            description="请检查网络后重试"
             loading={loading}
           />
         )}
