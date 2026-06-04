@@ -6,6 +6,7 @@ interface GraphNode {
   id: string
   name: string
   description?: string
+  category?: string
   bloomLevel?: string
   bloom_level?: string
   difficulty?: number
@@ -28,16 +29,18 @@ interface KnowledgeGraphProps {
   onNodeClick?: (node: GraphNode) => void
 }
 
-const bloomColors: Record<string, string> = {
-  remember: '#8B5CF6',
-  understand: '#3B82F6',
-  apply: '#10B981',
-  analyze: '#F59E0B',
-  evaluate: '#EF4444',
-  create: '#EC4899',
+// Bloom 分类 → 颜色（中文 key，后端直接输出）
+const BLOOM_COLORS: Record<string, string> = {
+  '记忆': '#8B5CF6',
+  '理解': '#3B82F6',
+  '应用': '#10B981',
+  '分析': '#F59E0B',
+  '评价': '#EF4444',
+  '创造': '#EC4899',
 }
 
-const bloomLabels: Record<string, string> = {
+// 英文 bloom_level → 中文 category
+const EN_TO_CATEGORY: Record<string, string> = {
   remember: '记忆',
   understand: '理解',
   apply: '应用',
@@ -46,14 +49,18 @@ const bloomLabels: Record<string, string> = {
   create: '创造',
 }
 
-const validBloom = new Set(Object.keys(bloomColors))
+const CATEGORY_ORDER = ['记忆', '理解', '应用', '分析', '评价', '创造'] as const
 
-const normalizeNode = (n: GraphNode): GraphNode => ({
-  ...n,
-  bloomLevel: (n.bloomLevel || n.bloom_level || 'understand').toLowerCase(),
-  difficulty: typeof n.difficulty === 'number' ? n.difficulty : 0.5,
-  isThresholdConcept: !!(n.isThresholdConcept || n.is_threshold_concept),
-})
+const normalizeNode = (n: GraphNode): GraphNode => {
+  const bloomLevel = (n.bloomLevel || n.bloom_level || 'understand').toLowerCase()
+  return {
+    ...n,
+    bloomLevel,
+    category: n.category || EN_TO_CATEGORY[bloomLevel] || '理解',
+    difficulty: typeof n.difficulty === 'number' ? n.difficulty : 0.5,
+    isThresholdConcept: !!(n.isThresholdConcept || n.is_threshold_concept),
+  }
+}
 
 const getNodeSize = (node: GraphNode) => {
   let size = 30
@@ -91,8 +98,8 @@ const GraphContent = memo(({ data, loading, onNodeClick }: KnowledgeGraphProps) 
       if (!id || seen.has(id)) continue
       seen.add(id)
       const normalized = normalizeNode(n)
-      if (!validBloom.has(normalized.bloomLevel!)) {
-        normalized.bloomLevel = 'understand'
+      if (!BLOOM_COLORS[normalized.category || '']) {
+        normalized.category = '理解'
       }
       normalized.id = id
       normalized.name = normalized.name || id
@@ -144,12 +151,6 @@ const GraphContent = memo(({ data, loading, onNodeClick }: KnowledgeGraphProps) 
 
     chartInstance.current = echarts.init(chartRef.current)
 
-    const bloomCounts: Record<string, number> = {}
-    safeData.nodes.forEach(n => {
-      const lvl = n.bloomLevel || 'understand'
-      bloomCounts[lvl] = (bloomCounts[lvl] || 0) + 1
-    })
-
     const option: echarts.EChartsOption = {
       backgroundColor: 'transparent',
       tooltip: {
@@ -158,13 +159,14 @@ const GraphContent = memo(({ data, loading, onNodeClick }: KnowledgeGraphProps) 
         extraCssText: 'max-width:240px;white-space:normal;word-break:break-word;overflow-wrap:break-word;',
         formatter: (params: any) => {
           if (params.dataType === 'node') {
-            const lvl = params.data.bloomLevel || 'understand'
+            const cat = params.data.category || '理解'
+            const catColor = BLOOM_COLORS[cat] || '#6B7280'
             const desc = (params.data.description || '').slice(0, 80)
             return [
               `<div style="font-weight:600;margin-bottom:4px;word-break:break-word;">${params.data.name}</div>`,
               desc ? `<div style="font-size:12px;color:#666;margin-bottom:6px;line-height:1.4;word-break:break-word;">${desc}</div>` : '',
               `<div style="display:flex;gap:6px;flex-wrap:wrap;">`,
-              `<span style="padding:2px 6px;background:${bloomColors[lvl] || '#6B7280'};color:#fff;border-radius:4px;font-size:11px;white-space:nowrap;">${bloomLabels[lvl] || lvl}</span>`,
+              `<span style="padding:2px 6px;background:${catColor};color:#fff;border-radius:4px;font-size:11px;white-space:nowrap;">${cat}</span>`,
               `<span style="padding:2px 6px;background:#f3f4f6;border-radius:4px;font-size:11px;white-space:nowrap;">难度 ${(params.data.difficulty ?? 0.5).toFixed(2)}</span>`,
               `</div>`,
             ].join('')
@@ -191,24 +193,28 @@ const GraphContent = memo(({ data, loading, onNodeClick }: KnowledgeGraphProps) 
         },
         roam: true,
         draggable: true,
-        categories: Object.entries(bloomLabels).map(([key, label]) => ({
-          name: label,
-          itemStyle: { color: bloomColors[key] },
+        categories: CATEGORY_ORDER.map(name => ({
+          name,
+          itemStyle: { color: BLOOM_COLORS[name] },
         })),
-        data: safeData.nodes.map(node => ({
-          ...node,
-          category: Object.keys(bloomLabels).indexOf(node.bloomLevel || 'understand'),
-          symbolSize: getNodeSize(node),
-          itemStyle: {
-            color: bloomColors[node.bloomLevel || 'understand'] || '#6B7280',
-            borderColor: node.isThresholdConcept ? '#A855F7' : 'rgba(255,255,255,0.6)',
-            borderWidth: node.isThresholdConcept ? 3 : 1.5,
-            shadowBlur: node.isThresholdConcept ? 16 : 6,
-            shadowColor: node.isThresholdConcept
-              ? (bloomColors[node.bloomLevel || 'understand'] || '#6B7280') + '60'
-              : 'rgba(0,0,0,0.06)',
-          },
-        })),
+        data: safeData.nodes.map(node => {
+          const cat = node.category || '理解'
+          const catColor = BLOOM_COLORS[cat] || '#6B7280'
+          return {
+            ...node,
+            category: cat,
+            symbolSize: getNodeSize(node),
+            itemStyle: {
+              color: catColor,
+              borderColor: node.isThresholdConcept ? '#A855F7' : 'rgba(255,255,255,0.6)',
+              borderWidth: node.isThresholdConcept ? 3 : 1.5,
+              shadowBlur: node.isThresholdConcept ? 16 : 6,
+              shadowColor: node.isThresholdConcept
+                ? catColor + '60'
+                : 'rgba(0,0,0,0.06)',
+            },
+          }
+        }),
         links: safeData.links.map(link => ({
           source: link.source,
           target: link.target,
@@ -264,12 +270,12 @@ const GraphContent = memo(({ data, loading, onNodeClick }: KnowledgeGraphProps) 
     }
   }, [safeData, onNodeClick])
 
-  // 按 bloom 分类统计
+  // 按中文 category 分类统计
   const categoryStats = useMemo(() => {
     const counts: Record<string, number> = {}
     safeData.nodes.forEach(n => {
-      const lvl = n.bloomLevel || 'understand'
-      counts[lvl] = (counts[lvl] || 0) + 1
+      const cat = n.category || '理解'
+      counts[cat] = (counts[cat] || 0) + 1
     })
     return counts
   }, [safeData.nodes])
@@ -281,11 +287,11 @@ const GraphContent = memo(({ data, loading, onNodeClick }: KnowledgeGraphProps) 
       {/* Bloom 分类图例（右下角） */}
       <div className="absolute bottom-3 right-3 bg-white/85 dark:bg-gray-800/85 backdrop-blur-sm rounded-lg px-3 py-2 text-xs shadow-sm border border-gray-100 dark:border-gray-700">
         <div className="flex items-center gap-2 flex-wrap">
-          {Object.entries(bloomLabels).map(([key, label]) => (
-            <span key={key} className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: bloomColors[key] }} />
+          {CATEGORY_ORDER.map(cat => (
+            <span key={cat} className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: BLOOM_COLORS[cat] }} />
               <span className="text-gray-500 dark:text-gray-400">
-                {label}{categoryStats[key] ? ` ${categoryStats[key]}` : ''}
+                {cat}{categoryStats[cat] ? ` ${categoryStats[cat]}` : ''}
               </span>
             </span>
           ))}

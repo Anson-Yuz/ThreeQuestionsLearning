@@ -4,6 +4,15 @@ from typing import List, Dict, Optional
 class GraphService:
     """知识图谱生成与管理"""
 
+    BLOOM_TO_CATEGORY = {
+        "remember": "记忆",
+        "understand": "理解",
+        "apply": "应用",
+        "analyze": "分析",
+        "evaluate": "评价",
+        "create": "创造",
+    }
+
     def __init__(self, llm_service=None):
         self.llm = llm_service
 
@@ -111,11 +120,13 @@ relation 可选: prerequisite（前置依赖）、related（相关）、contradi
             if nid in seen_ids:
                 continue
             seen_ids.add(nid)
+            bloom = n.get("bloom_level") if n.get("bloom_level") in valid_bloom else "understand"
             clean_nodes.append({
                 "id": nid,
                 "name": str(n.get("name", nid)),
                 "description": str(n.get("description", ""))[:200],
-                "bloom_level": n.get("bloom_level") if n.get("bloom_level") in valid_bloom else "understand",
+                "bloom_level": bloom,
+                "category": self.BLOOM_TO_CATEGORY.get(bloom, "理解"),
                 "difficulty": max(0.1, min(1.0, float(n.get("difficulty", 0.5)))),
                 "is_threshold_concept": bool(n.get("is_threshold_concept", False)),
             })
