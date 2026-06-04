@@ -227,8 +227,88 @@ def init_db():
             )
         """)
 
+        # 课程全文索引（FTS5）— 用于快速关键词搜索
+        try:
+            conn.execute("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS courses_fts USING fts5(
+                    course_id UNINDEXED,
+                    title,
+                    description,
+                    content,
+                    tokenize='unicode61'
+                )
+            """)
+        except Exception as e:
+            print(f"⚠️ FTS5 不可用（{e}），将回退到 LIKE 搜索")
+
         conn.commit()
         print("✅ 数据库初始化完成")
+
+        # 启动时回填 FTS（覆盖已有课程）
+        backfill_fts()
+
+
+def update_fts(course_id: str, title: str, description: str, full_text: str):
+    """同步课程到 FTS5 索引。失败时静默忽略。"""
+    try:
+        with get_db() as conn:
+            conn.execute("DELETE FROM courses_fts WHERE course_id = ?", (course_id,))
+            conn.execute(
+                "INSERT INTO courses_fts(course_id, title, description, content) VALUES (?, ?, ?, ?)",
+                (course_id, title or "", description or "", (full_text or "")[:100000])
+            )
+            conn.commit()
+    except Exception as e:
+        print(f"⚠️ FTS 同步失败 {course_id}: {e}")
+
+
+def remove_fts(course_id: str):
+    """从 FTS 索引中移除课程。"""
+    try:
+        with get_db() as conn:
+            conn.execute("DELETE FROM courses_fts WHERE course_id = ?", (course_id,))
+            conn.commit()
+    except Exception as e:
+        print(f"⚠️ FTS 删除失败 {course_id}: {e}")
+
+
+def backfill_fts():
+    """全量回填 FTS 索引 — 用于初始化时把已有课程导入。"""
+    try:
+        with get_db() as conn:
+            rows = conn.execute(
+                "SELECT c.id, c.title, c.original_question, "
+                "GROUP_CONCAT(COALESCE(d.title, '') || ' ' || COALESCE(d.content, ''), ' ') AS full_text "
+                "FROM courses c LEFT JOIN documents d ON d.course_id = c.id "
+                "WHERE c.status != 'deleted' GROUP BY c.id"
+            ).fetchall()
+        for r in rows:
+            update_fts(r["id"], r["title"] or "", r["original_question"] or "", r["full_text"] or "")
+        print(f"✅ FTS 回填完成: {len(rows)} 门课程")
+    except Exception as e:
+        print(f"⚠️ FTS 回填失败: {e}")
+
+
+def rebuild_course_fts(course_id: str):
+    """重新构建单门课程的 FTS 索引（资料变更后调用）。"""
+    try:
+        with get_db() as conn:
+            row = conn.execute(
+                "SELECT title, original_question FROM courses WHERE id = ?",
+                (course_id,)
+            ).fetchone()
+            if not row:
+                remove_fts(course_id)
+                return
+            full_text_row = conn.execute(
+                "SELECT GROUP_CONCAT(COALESCE(title, '') || ' ' || COALESCE(content, ''), ' ') AS ft "
+                "FROM documents WHERE course_id = ?",
+                (course_id,)
+            ).fetchone()
+            full_text = full_text_row["ft"] if full_text_row else ""
+            update_fts(course_id, row["title"] or "", row["original_question"] or "", full_text or "")
+    except Exception as e:
+        print(f"⚠️ 单门课程 FTS 重建失败 {course_id}: {e}")
 
 # 初始化数据库
 if __name__ == "__main__":

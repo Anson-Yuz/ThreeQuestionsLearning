@@ -358,6 +358,14 @@ async def import_urls(req: ImportRequest):
     imported = [r for r in results if r["status"] == "imported"]
     failed = [r for r in results if r["status"] == "failed"]
 
+    # 同步 FTS 索引（新文档已入库）
+    if len(imported) > 0:
+        try:
+            from database import rebuild_course_fts
+            rebuild_course_fts(course_id)
+        except Exception:
+            pass
+
     # 导入完成后，异步触发图谱更新 + 争议分析
     if len(imported) > 0:
         def _run_bg():

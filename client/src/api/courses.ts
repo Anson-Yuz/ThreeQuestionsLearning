@@ -40,6 +40,27 @@ export interface CourseListResponse {
   total: number;
 }
 
+export interface CourseSearchResult {
+  id: string;
+  title: string;
+  description: string;
+  snippet: string;
+  score: number;
+  keywords: string[];
+  original_question?: string;
+  status?: string;
+  created_at?: number;
+  updated_at?: number;
+  doc_count?: number;
+  chinese_ratio?: number;
+}
+
+export interface CourseSearchResponse {
+  results: CourseSearchResult[];
+  total: number;
+  query: string;
+}
+
 export const coursesApi = {
   // 创建课程
   create: (question: string): Promise<CreateCourseResponse> => {
@@ -49,6 +70,11 @@ export const coursesApi = {
   // 获取课程列表
   list: (status?: string, limit: number = 50, offset: number = 0): Promise<CourseListResponse> => {
     return apiClient.get('/courses/list', { status, limit, offset });
+  },
+
+  // 搜索课程（FTS5 后端，< 50ms 响应）
+  search: (q: string, topK: number = 10): Promise<CourseSearchResponse> => {
+    return apiClient.get('/courses/search', { q, top_k: topK });
   },
 
   // 获取单个课程详情

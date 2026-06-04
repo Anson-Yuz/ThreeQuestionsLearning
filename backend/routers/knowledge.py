@@ -83,6 +83,13 @@ async def upload_document(
     if background_tasks:
         background_tasks.add_task(vectorize_document, course_id, doc_id, content_text)
 
+    # 7. 同步 FTS 索引
+    try:
+        from database import rebuild_course_fts
+        rebuild_course_fts(course_id)
+    except Exception:
+        pass
+
     return SuccessResponse(success=True, message="文件上传成功", data={"doc_id": doc_id})
 
 
@@ -122,6 +129,14 @@ async def upload_multiple_files(
             """, (doc_id, course_id, file.filename, content_text, str(file_path), file.content_type, "user", now))
             doc_ids.append(doc_id)
         conn.commit()
+
+    # 同步 FTS 索引
+    if doc_ids:
+        try:
+            from database import rebuild_course_fts
+            rebuild_course_fts(course_id)
+        except Exception:
+            pass
 
     # 触发后台图谱+争议生成
     if doc_ids and background_tasks:

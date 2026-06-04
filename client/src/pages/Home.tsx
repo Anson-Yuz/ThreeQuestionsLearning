@@ -7,6 +7,7 @@ import EmptyState from '../components/ui/EmptyState'
 import DiscoverResultsPanel from '../components/business/DiscoverResultsPanel'
 import UploadModal from '../components/business/UploadModal'
 import { useCourseStore } from '../stores/courseStore'
+import { coursesApi, CourseSearchResult } from '../api/courses'
 import { discoverApi, DiscoverResult } from '../api/discover'
 
 const Home = () => {
@@ -14,6 +15,10 @@ const Home = () => {
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { courses, loading, error, fetchCourses, deleteCourse, archiveCourse } = useCourseStore()
   const [searchValue, setSearchValue] = useState('')
+  const [courseSearch, setCourseSearch] = useState('')
+  const [courseSearchResults, setCourseSearchResults] = useState<CourseSearchResult[]>([])
+  const [courseSearching, setCourseSearching] = useState(false)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [showMenu, setShowMenu] = useState(false)
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null)
   const [showUpload, setShowUpload] = useState(false)
@@ -31,6 +36,27 @@ const Home = () => {
 
   // 清理定时器
   useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current) }, [])
+
+  // 课程库内搜索（FTS5 后端，< 50ms），输入防抖 300ms
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    const q = courseSearch.trim()
+    if (q.length < 1) {
+      setCourseSearchResults([])
+      setCourseSearching(false)
+      return
+    }
+    setCourseSearching(true)
+    debounceRef.current = setTimeout(() => {
+      coursesApi.search(q, 8)
+        .then((res) => setCourseSearchResults(res.results || []))
+        .catch(() => setCourseSearchResults([]))
+        .finally(() => setCourseSearching(false))
+    }, 300)
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [courseSearch])
 
   const stopTimer = useCallback(() => {
     if (timerRef.current) {
@@ -164,6 +190,58 @@ const Home = () => {
             onAction={() => searchInputRef.current?.focus()}
             loading={loading}
           />
+        )}
+
+        {/* 课程库内搜索（FTS5 < 50ms） */}
+        <div className="relative mb-3">
+          <div className="absolute left-3 top-1/2 -translate-y-1/2">
+            <SearchIcon className="w-4 h-4 text-gray-400" />
+          </div>
+          <input
+            type="text"
+            value={courseSearch}
+            onChange={(e) => setCourseSearch(e.target.value)}
+            placeholder="在课程库中搜索..."
+            className="w-full pl-9 pr-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          {courseSearching && (
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">搜索中…</span>
+          )}
+        </div>
+
+        {/* 搜索结果 */}
+        {courseSearch.trim() && (
+          <div className="mb-3 space-y-1.5">
+            {courseSearching && courseSearchResults.length === 0 && (
+              <p className="text-xs text-gray-400 px-2 py-3 text-center">正在搜索...</p>
+            )}
+            {!courseSearching && courseSearchResults.length === 0 && (
+              <p className="text-xs text-gray-400 px-2 py-3 text-center">未找到匹配课程</p>
+            )}
+            {courseSearchResults.map((r) => (
+              <button
+                key={r.id}
+                onClick={() => navigate(`/learning/${r.id}`)}
+                className="w-full text-left p-3 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl hover:border-blue-300 transition-colors"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-900 dark:text-white truncate flex-1">
+                    {r.title}
+                  </span>
+                  {r.doc_count !== undefined && (
+                    <span className="text-[10px] text-gray-400 ml-2 flex-shrink-0">
+                      {r.doc_count} 篇
+                    </span>
+                  )}
+                </div>
+                {r.snippet && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">
+                    {r.snippet}
+                  </p>
+                )}
+              </button>
+            ))}
+          </div>
         )}
 
         <div className="space-y-3">

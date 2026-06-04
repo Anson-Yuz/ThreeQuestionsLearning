@@ -63,6 +63,13 @@ async def create_course(
 
     background_tasks.add_task(ai_supplement_background, course_id, req.question)
 
+    # 同步 FTS 索引
+    try:
+        from database import update_fts
+        update_fts(course_id, title, req.question, "")
+    except Exception:
+        pass
+
     return format_course(row)
 
 async def ai_supplement_background(course_id: str, question: str):
@@ -161,96 +168,98 @@ def _make_snippet(text: str, query: str, max_len: int = 120) -> str:
 async def search_courses(
     q: str = Query(..., min_length=1, description="搜索关键词"),
     top_k: int = Query(10, ge=1, le=50),
-    prefer_chinese: bool = Query(True, description="中文资料优先")
 ):
     """
-    课程搜索：标题匹配 + 文档内容相关性 + 中文资料加权
-    综合分 = 0.55 * 内容相关 + 0.30 * 标题匹配 + 0.15 * 中文加权
+    课程搜索：FTS5 全文索引（< 50ms）
+    FTS5 不可用时回退到 LIKE + Python 排序。
     """
-    if not q.strip():
+    q = q.strip()
+    if len(q) < 1:
         return {"results": [], "total": 0, "query": q}
 
-    q_tokens = _tokenize(q)
-    is_zh_query = _has_chinese(q)
-
-    with get_db() as conn:
-        courses = conn.execute(
-            "SELECT id, title, keywords, original_question, status, created_at, updated_at "
-            "FROM courses WHERE status != 'deleted'"
-        ).fetchall()
-
+    is_zh = _has_chinese(q)
     results = []
-    for c in courses:
-        title = c["title"] or ""
-        title_lower = title.lower()
-        course_id = c["id"]
 
-        # 标题匹配分
-        if q.lower() in title_lower:
-            title_score = 1.0
-        elif any(tk in title_lower for tk in q_tokens):
-            title_score = 0.6
-        else:
-            title_score = 0.0
-
+    # 1. 优先用 FTS5（速度 < 50ms）
+    try:
         with get_db() as conn:
-            docs = conn.execute(
-                "SELECT title, content, source_type FROM documents WHERE course_id = ?",
-                (course_id,)
+            fts_query = f'"{q}"' if not is_zh else q
+            rows = conn.execute(
+                "SELECT course_id, title, description, snippet(courses_fts, 3, '...', '...', 32), rank "
+                "FROM courses_fts WHERE courses_fts MATCH ? ORDER BY rank LIMIT ?",
+                (fts_query, top_k * 2)
             ).fetchall()
+        for r in rows:
+            results.append({
+                "id": r["course_id"],
+                "title": r["title"] or "",
+                "description": r["description"] or "",
+                "snippet": r[3] or "",
+                "score": round(1.0 / (1 + max(0, r["rank"])), 4),
+            })
+    except Exception as e:
+        print(f"[search] FTS5 查询失败: {e}, 回退 LIKE")
+        results = []
 
-        all_text = " ".join((d["title"] or "") + " " + (d["content"] or "") for d in docs)
-        if not all_text.strip():
-            content_score = 0.0
-            best_snippet = ""
-            chinese_ratio = 0.0
-        else:
-            text_lower = all_text.lower()
-            token_hits = sum(1 for tk in q_tokens if tk in text_lower)
-            content_score = min(1.0, token_hits / max(1, len(q_tokens)))
+    # 2. 回退：标题 LIKE + 文档数
+    if not results:
+        with get_db() as conn:
+            like_q = f"%{q}%"
+            rows = conn.execute(
+                "SELECT id, title, original_question FROM courses "
+                "WHERE status != 'deleted' AND title LIKE ? LIMIT ?",
+                (like_q, top_k)
+            ).fetchall()
+        for r in rows:
+            results.append({
+                "id": r["id"],
+                "title": r["title"] or "",
+                "description": r["original_question"] or "",
+                "snippet": "",
+                "score": 0.5,
+            })
 
-            if prefer_chinese:
-                chinese_chars = len(_CHINESE_RE.findall(all_text))
-                chinese_ratio = chinese_chars / max(1, len(all_text))
-            else:
-                chinese_ratio = 0.5
+    # 3. 合并课程元数据（keywords、status、doc_count）
+    if results:
+        ids = tuple(r["id"] for r in results)
+        placeholders = ",".join("?" * len(ids))
+        with get_db() as conn:
+            meta_rows = conn.execute(
+                f"SELECT id, keywords, original_question, status, created_at, updated_at "
+                f"FROM courses WHERE id IN ({placeholders})",
+                ids
+            ).fetchall()
+            meta_map = {r["id"]: dict(r) for r in meta_rows}
 
-            best_snippet = _make_snippet(docs[0]["content"] or docs[0]["title"] or "", q)
+            doc_count_rows = conn.execute(
+                f"SELECT course_id, COUNT(*) AS cnt FROM documents "
+                f"WHERE course_id IN ({placeholders}) GROUP BY course_id",
+                ids
+            ).fetchall()
+            doc_count_map = {r["course_id"]: r["cnt"] for r in doc_count_rows}
 
-        if is_zh_query:
-            chinese_bonus = chinese_ratio
-        else:
-            chinese_bonus = 0.5 if chinese_ratio < 0.3 else 0.0
+        for r in results:
+            m = meta_map.get(r["id"], {})
+            r["keywords"] = json.loads(m.get("keywords") or "[]") if m.get("keywords") else []
+            r["original_question"] = m.get("original_question", "")
+            r["status"] = m.get("status", "active")
+            r["created_at"] = m.get("created_at", 0)
+            r["updated_at"] = m.get("updated_at", 0)
+            r["doc_count"] = doc_count_map.get(r["id"], 0)
 
-        final_score = (
-            0.55 * content_score
-            + 0.30 * title_score
-            + 0.15 * chinese_bonus
-        )
-
-        if final_score < 0.25:
-            continue
-
-        results.append({
-            "id": c["id"],
-            "title": title,
-            "keywords": json.loads(c["keywords"]) if c["keywords"] else [],
-            "original_question": c["original_question"],
-            "status": c["status"],
-            "created_at": c["created_at"],
-            "updated_at": c["updated_at"],
-            "doc_count": len(docs),
-            "score": round(final_score, 4),
-            "snippet": best_snippet,
-            "chinese_ratio": round(chinese_ratio, 3),
-        })
+    # 中文查询时含中文资料的微加权
+    if is_zh:
+        for r in results:
+            chinese_ratio = len(_CHINESE_RE.findall(r["title"])) / max(1, len(r["title"]))
+            r["score"] = round(r["score"] * (1 + 0.1 * chinese_ratio), 4)
+            r["chinese_ratio"] = round(chinese_ratio, 3)
 
     results.sort(key=lambda x: x["score"], reverse=True)
     results = results[:top_k]
 
-    print(f"[search] q={q!r} 命中 {len(results)} 条 (中文查询={is_zh_query})")
-    for r in results[:5]:
-        print(f"  - {r['title']} (score={r['score']}, zh={r['chinese_ratio']}, docs={r['doc_count']})")
+    print(f"[search] q={q!r} 命中 {len(results)} 条 (FTS5={bool(results)})")
+    for r in results[:3]:
+        print(f"  - {r['title']} (score={r['score']}, docs={r.get('doc_count', 0)})")
 
     return {"results": results, "total": len(results), "query": q}
 
