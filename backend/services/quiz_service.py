@@ -305,14 +305,13 @@ def generate_quick_quiz(course_id: str, db, target_count: int = 10) -> List[Dict
 
 
 async def _background_generate_llm_quiz(course_id: str):
-    """后台异步生成高质量题目 + 写缓存 + 推 SSE"""
+    """后台异步生成 10 道深度理解题 → 写缓存 → 推 quiz_ready SSE"""
     try:
-        from services.llm_service import LLMService
         from database import get_db
 
         with get_db() as conn:
             docs = conn.execute(
-                "SELECT id, title, content FROM documents WHERE course_id = ? LIMIT 5",
+                "SELECT id, title, content FROM documents WHERE course_id = ? LIMIT 8",
                 (course_id,),
             ).fetchall()
             title_row = conn.execute(
@@ -321,13 +320,16 @@ async def _background_generate_llm_quiz(course_id: str):
         documents = [
             {"id": d["id"], "title": d["title"], "content": d["content"] or ""} for d in docs
         ]
-        if not documents:
+        if len(documents) < 2:
+            print(f"[deep-quiz] 课程 {course_id} 文档不足 (需≥2)，跳过生成")
             return
         course_title = title_row["title"] if title_row else ""
-        llm = LLMService()
-        qs = QuizService(llm)
-        quizzes = await qs.generate_quiz(course_id, documents, course_title=course_title)
-        if not quizzes:
+
+        questions = await generate_deep_quiz_10(
+            course_id, documents, course_title=course_title
+        )
+        if not questions:
+            print(f"[deep-quiz] 课程 {course_id} 生成失败，未得到 10 题")
             return
 
         from datetime import datetime
@@ -336,15 +338,140 @@ async def _background_generate_llm_quiz(course_id: str):
             conn.execute(
                 "INSERT OR REPLACE INTO course_quizzes (course_id, quizzes_json, updated_at) "
                 "VALUES (?, ?, ?)",
-                (course_id, json.dumps(quizzes, ensure_ascii=False), now),
+                (course_id, json.dumps(questions, ensure_ascii=False), now),
             )
             conn.commit()
         from routers.sse import push_event
         push_event(
             course_id,
             "quiz_ready",
-            {"quizzes": quizzes, "count": len(quizzes), "source": "llm"},
+            {"quizzes": questions, "count": len(questions), "source": "deep"},
         )
-        print(f"[quick-quiz] 课程 {course_id} LLM 升级完成: {len(quizzes)} 道题")
+        print(f"[deep-quiz] 课程 {course_id} 成功推送 {len(questions)} 道深度题目")
     except Exception as e:
-        print(f"[quick-quiz] LLM 升级失败 {course_id}: {e}")
+        print(f"[deep-quiz] 课程 {course_id} 后台生成异常: {e}")
+
+
+async def generate_deep_quiz_10(
+    course_id: str,
+    documents: List[Dict],
+    course_title: str = "",
+) -> List[Dict]:
+    """单次 LLM 调用生成 10 道检验深层理解的选择题，严格校验 4 选项 + correct_index。
+
+    返回格式：与现有 QuizQuestion 兼容（correct_answer 为 A/B/C/D 字母），直接可入库。
+    无资料 / LLM 不可用 / 返回格式错误 → 返回空列表。
+    """
+    if not documents:
+        return []
+
+    from services.llm_service import LLMService
+
+    # 选 top-k 片段（用课程标题 + 提示词加权）
+    query_terms = " ".join(filter(None, [course_title, "核心框架", "底层逻辑"]))
+    query_tokens = [t for t in query_terms if len(t) > 1]
+    candidates = []
+    for doc in documents:
+        content = (doc.get("content") or "").strip()
+        if not content:
+            continue
+        head = content[:2000]
+        score = sum(1 for t in query_tokens if t in head) * 2
+        candidates.append((score, len(head), head))
+    candidates.sort(key=lambda x: (-x[0], -x[1]))
+    top_fragments = [c[2] for c in candidates[:5]]
+    combined_text = "\n\n---\n\n".join(top_fragments)
+    if not combined_text.strip():
+        return []
+
+    doc_count_hint = ""
+    if len(documents) < 3:
+        doc_count_hint = "注：现有资料较少（<3份），请基于现有资料尽力出题，不必硬凑数量。"
+
+    prompt = f"""你是一位教育评估专家。请基于以下学习资料，创建 10 道高质量选择题，用来检验学习者是否真正理解了该主题，而不仅仅是死记硬背事实。
+
+学习资料：
+{combined_text[:4000]}
+
+出题规则：
+1. **避免纯事实回忆**：不要出"XX的定义是什么"这种题，除非选项需要深度辨析。
+2. **强调应用和分析**：多出情境题，让学习者将知识应用于新场景。
+3. **包含陷阱选项**：每个错误选项都应看起来合理，代表常见的误解或混淆。
+4. **覆盖多个认知层次**：至少包含记忆(2题)、理解(3题)、应用(2题)、分析/评价/创造(3题)。
+5. **每题须有详细解释**：说明为什么正确答案对，其他错在哪里。
+6. 每道题必须返回 4 个选项，正确答案的索引为 0-3。
+7. 严格返回恰好 10 道题，不要省略或合并。
+
+{doc_count_hint}
+
+返回纯 JSON 数组（10 个元素），不要 markdown 代码块：
+[
+  {{
+    "question": "题目文本",
+    "options": ["A选项", "B选项", "C选项", "D选项"],
+    "correct_index": 0,
+    "dimension": "应用",
+    "bloom_level": "apply",
+    "explanation": "详细解释",
+    "knowledge_points": ["相关知识点"]
+  }}
+]
+"""
+
+    llm = LLMService()
+    if not llm.api_key:
+        print(f"[deep-quiz] 课程 {course_id}: LLM API Key 未配置")
+        return []
+
+    try:
+        result = await llm.chat_json(prompt, temperature=0.3, max_tokens=4096)
+    except Exception as e:
+        print(f"[deep-quiz] 课程 {course_id}: LLM 调用失败: {e}")
+        return []
+
+    if not isinstance(result, list) or not result:
+        print(f"[deep-quiz] 课程 {course_id}: 返回非数组或空 (type={type(result).__name__})")
+        return []
+
+    # 严格校验 + 字段规范化
+    valid_questions: List[Dict] = []
+    for i, q in enumerate(result):
+        if not isinstance(q, dict):
+            continue
+        question_text = str(q.get("question", "")).strip()
+        options = q.get("options", [])
+        if not question_text or not isinstance(options, list):
+            continue
+        options = [str(o).strip() for o in options if str(o).strip()][:4]
+        if len(options) != 4:
+            continue
+        correct_idx = q.get("correct_index", 0)
+        if not isinstance(correct_idx, int) or correct_idx < 0 or correct_idx >= 4:
+            correct_idx = 0
+
+        bloom = str(q.get("bloom_level", "")).strip().lower()
+        if bloom not in QuizService.DIFFICULTIES:
+            dim_cn = str(q.get("dimension", "理解")).strip()
+            bloom = QuizService.DIMENSION_TO_BLOOM.get(dim_cn, "understand")
+
+        valid_questions.append({
+            "id": f"deep_{course_id}_{i + 1}",
+            "dimension": QuizService.BLOOM_TO_CATEGORY.get(bloom, "理解"),
+            "bloom_level": bloom,
+            "difficulty": QuizService.DIFFICULTIES.get(bloom, 0.5),
+            "question_type": "multiple_choice",
+            "question": question_text[:300],
+            "options": [o[:200] for o in options],
+            "correct_answer": chr(ord("A") + correct_idx),
+            "explanation": str(q.get("explanation", "")).strip()[:500],
+            "knowledge_points": [str(kp) for kp in (q.get("knowledge_points") or [])][:5],
+        })
+
+    if len(valid_questions) < 10:
+        print(
+            f"[deep-quiz] 课程 {course_id}: 校验后得到 {len(valid_questions)} 题 "
+            f"(LLM 返回 {len(result)})"
+        )
+        return []
+
+    return valid_questions
