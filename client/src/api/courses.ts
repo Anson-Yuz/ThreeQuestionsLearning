@@ -93,6 +93,16 @@ export const coursesApi = {
     return apiClient.get(`/courses/${courseId}/quizzes`);
   },
 
+  // 快速测评（< 100ms 关键词题 + 后台 LLM 升级）
+  getQuickQuiz: (courseId: string): Promise<{
+    questions: any[]
+    source: 'quick' | 'llm'
+    count: number
+    elapsed_ms: number
+  }> => {
+    return apiClient.get(`/courses/${courseId}/quick-quiz`);
+  },
+
   // 获取单个课程详情
   get: (courseId: string): Promise<Course> => {
     return apiClient.get(`/courses/${courseId}`);

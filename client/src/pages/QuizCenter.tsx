@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { NavBar } from '../components/layout/NavBar'
 import QuizPlayer from '../components/business/QuizPlayer'
@@ -37,41 +37,57 @@ const QuizCenter = () => {
     setLoading(true)
     setErrorMsg('')
 
-    const pollTimer = { current: null as ReturnType<typeof setInterval> | null }
+    // 1) 快速测评：< 100ms 拿到关键词题，立即显示
     const overallTimer = setTimeout(() => {
-      if (pollTimer.current) clearInterval(pollTimer.current)
-      setLoading(false)
-      setErrorMsg('生成超时，请点击重试')
+      setLoading((curLoading) => {
+        if (curLoading) {
+          setErrorMsg('生成超时，请点击重试')
+          return false
+        }
+        return curLoading
+      })
     }, 60000)
 
-    const fetchFromCache = (isRetry = false) => {
-      coursesApi.getCachedQuizzes(courseId)
-        .then((cached) => {
-          if (cached.status === 'ready' && cached.data?.length) {
-            clearTimeout(overallTimer)
-            if (pollTimer.current) clearInterval(pollTimer.current)
-            setQuestions(cached.data as unknown as QuizItem[])
-            setLoading(false)
-            return
-          }
-          if (cached.status === 'generating' && !isRetry) {
-            // 后台正在生成，每 3s 轮询一次
-            pollTimer.current = setInterval(() => fetchFromCache(true), 3000)
-          } else {
-            // 仍是 generating 但超过了首次轮询还没好，保持 loading 等下个轮询
-          }
-        })
-        .catch(() => {
-          // 缓存接口失败，降级到同步生成
-          clearTimeout(overallTimer)
-          if (pollTimer.current) clearInterval(pollTimer.current)
-          threeAskApi.generateQuiz(courseId)
-            .then((res) => setQuestions((res.quizzes || []) as unknown as QuizItem[]))
-            .catch((e) => setErrorMsg(e?.message || '生成失败'))
-            .finally(() => setLoading(false))
-        })
-    }
-    fetchFromCache()
+    coursesApi.getQuickQuiz(courseId)
+      .then((res) => {
+        clearTimeout(overallTimer)
+        if (mountedRef.current && res.questions?.length) {
+          setQuestions(res.questions as unknown as QuizItem[])
+          setLoading(false)
+        } else if (mountedRef.current) {
+          // 快速题也空（无资料），降级到缓存接口
+          setErrorMsg('暂无资料，请先上传文档')
+          setLoading(false)
+        }
+      })
+      .catch((e) => {
+        clearTimeout(overallTimer)
+        if (mountedRef.current) {
+          setErrorMsg(e?.message || '生成失败')
+          setLoading(false)
+        }
+      })
+  }, [courseId])
+
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
+
+  // 监听 SSE：后台 LLM 升级完成后用高质量题目替换
+  useEffect(() => {
+    if (!courseId) return
+    const es = new EventSource(`/api/sse/stream/${courseId}`)
+    es.addEventListener('quiz_ready', (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data)
+        if (data?.quizzes?.length && mountedRef.current) {
+          setQuestions(data.quizzes as unknown as QuizItem[])
+        }
+      } catch {}
+    })
+    return () => es.close()
   }, [courseId])
 
   useEffect(() => {

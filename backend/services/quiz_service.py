@@ -137,3 +137,122 @@ class QuizService:
             ability_scores[dim] = sum(score_list) / len(score_list) if score_list else 0
 
         return ability_scores
+
+
+def generate_quick_quiz(course_id: str, db, target_count: int = 10) -> List[Dict]:
+    """基于关键词立即生成简单选择题，2 秒内完成（无需 LLM）
+
+    策略：jieba 分词 → 统计高频中文词 → 取前 N 个，每个词构造一道「以下哪项最贴近『XX』？」
+    """
+    # 收集所有文档文本
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT title, content FROM documents WHERE course_id = ?",
+            (course_id,)
+        ).fetchall()
+    if not rows:
+        return []
+
+    docs_text = " ".join(((r["title"] or "") + " " + (r["content"] or "")) for r in rows)
+    if not docs_text.strip():
+        return []
+
+    # jieba 提取高频中文词
+    try:
+        import jieba
+        words = jieba.lcut(docs_text)
+    except Exception:
+        words = list(docs_text)
+
+    word_freq: Dict[str, int] = {}
+    for w in words:
+        if len(w) >= 2 and '\u4e00' <= w[0] <= '\u9fff':
+            word_freq[w] = word_freq.get(w, 0) + 1
+
+    top_words = [w for w, _ in sorted(word_freq.items(), key=lambda x: x[1], reverse=True)[:target_count]]
+    if len(top_words) < 4:
+        for fb in ['学习', '知识', '方法', '原理', '应用', '概念', '系统', '技术', '设计', '实现']:
+            if fb not in top_words:
+                top_words.append(fb)
+            if len(top_words) >= target_count:
+                break
+
+    def find_sentence_with_word(text: str, word: str, max_len: int = 50) -> str:
+        for sent in text.replace('\n', '。').split('。'):
+            if word in sent and len(sent.strip()) > 4:
+                s = sent.strip()
+                return s[:max_len] + ('…' if len(s) > max_len else '')
+        return ""
+
+    questions = []
+    for i, word in enumerate(top_words[:target_count]):
+        correct = find_sentence_with_word(docs_text, word) or f"与「{word}」相关的核心概念"
+        distractors = [
+            f"与「{w}」相关的概念"
+            for w in top_words if w != word
+        ][:3]
+        while len(distractors) < 3:
+            distractors.append(f"干扰项 {len(distractors) + 1}")
+        # 随机打乱，正确答案固定在 0
+        options = [correct] + distractors
+        questions.append({
+            "id": f"quick_q{i}",
+            "dimension": "记忆",
+            "bloom_level": "remember",
+            "difficulty": 0.2,
+            "question_type": "multiple_choice",
+            "question": f"以下哪项最贴近「{word}」？",
+            "options": options,
+            "correct_answer": 0,
+            "explanation": f"「{word}」是资料中提及的核心概念。",
+            "knowledge_points": [word],
+        })
+    return questions
+
+
+def _background_generate_llm_quiz(course_id: str):
+    """后台 LLM 生成高质量题目 + 写缓存 + 推 SSE"""
+    try:
+        from services.llm_service import LLMService
+        from database import get_db
+        with get_db() as conn:
+            docs = conn.execute(
+                "SELECT id, title, content FROM documents WHERE course_id = ? LIMIT 5",
+                (course_id,)
+            ).fetchall()
+        documents = [{"id": d["id"], "title": d["title"], "content": d["content"] or ""} for d in docs]
+        if not documents:
+            return
+        llm = LLMService()
+        qs = QuizService(llm)
+        import asyncio
+        quizzes = asyncio.run(qs.generate_quiz(course_id, documents, questions_per_level=2))
+        if not quizzes:
+            return
+        import json
+        from datetime import datetime
+        now = int(datetime.now().timestamp() * 1000)
+        with get_db() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO course_quizzes (course_id, quizzes_json, updated_at) VALUES (?, ?, ?)",
+                (course_id, json.dumps(quizzes, ensure_ascii=False), now)
+            )
+            conn.commit()
+        from routers.sse import push_event
+        push_event(course_id, "quiz_ready", {"quizzes": quizzes, "count": len(quizzes), "source": "llm"})
+        print(f"[quick-quiz] 课程 {course_id} LLM 升级完成: {len(quizzes)} 道题")
+    except Exception as e:
+        print(f"[quick-quiz] LLM 升级失败 {course_id}: {e}")
+        """计算能力维度得分"""
+        scores = {dim: [] for dim in self.DIFFICULTIES.keys()}
+
+        for result in quiz_results:
+            dim = result.get("dimension", "remember")
+            if dim in scores and result.get("is_correct"):
+                scores[dim].append(100)
+
+        ability_scores = {}
+        for dim, score_list in scores.items():
+            ability_scores[dim] = sum(score_list) / len(score_list) if score_list else 0
+
+        return ability_scores

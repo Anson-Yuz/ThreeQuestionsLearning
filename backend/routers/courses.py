@@ -1,6 +1,7 @@
 import uuid
 import json
 import re
+import time
 import asyncio
 import threading
 from datetime import datetime
@@ -261,6 +262,46 @@ async def get_cached_quizzes(course_id: str):
 
     threading.Thread(target=_bg, daemon=True).start()
     return {"status": "generating", "data": []}
+
+
+@router.get("/{course_id}/quick-quiz")
+async def get_quick_quiz(course_id: str):
+    """
+    快速测评接口：< 100ms 返回 10 道基于关键词的简单题
+    同时后台启动 LLM 生成高质量题目，完成后通过 SSE `quiz_ready` 推送
+    """
+    start = time.time()
+
+    # 1. 同步：基于关键词立即生成 10 道题
+    try:
+        from services.quiz_service import generate_quick_quiz
+        quick_questions = generate_quick_quiz(course_id, get_db, target_count=10)
+    except Exception as e:
+        print(f"[quick-quiz] 关键词生成失败: {e}")
+        quick_questions = []
+
+    # 2. 后台：用 LLM 生成高质量题目，完成后写缓存 + 推 SSE
+    try:
+        from services.quiz_service import _background_generate_llm_quiz
+
+        def _bg():
+            try:
+                _background_generate_llm_quiz(course_id)
+            except Exception as e:
+                print(f"[quick-quiz] 后台任务异常: {e}")
+        threading.Thread(target=_bg, daemon=True).start()
+    except Exception as e:
+        print(f"[quick-quiz] 启动后台任务失败: {e}")
+
+    elapsed = (time.time() - start) * 1000
+    print(f"[quick-quiz] 课程 {course_id} 返回 {len(quick_questions)} 道关键词题，耗时 {elapsed:.1f}ms")
+
+    return {
+        "questions": quick_questions,
+        "source": "quick",
+        "count": len(quick_questions),
+        "elapsed_ms": round(elapsed, 1),
+    }
 
 
 @router.get("/search")
