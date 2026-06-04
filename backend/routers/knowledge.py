@@ -138,20 +138,20 @@ async def upload_multiple_files(
         except Exception:
             pass
 
-    # 触发后台图谱+测评+争议生成（FastAPI BackgroundTasks，零 threading 冲突）
+    # 触发后台图谱+争议生成
     if doc_ids and background_tasks:
         try:
-            from routers.three_ask import (
-                _regenerate_graph_bg,
-                _regenerate_quiz_bg,
-                _detect_controversy_bg,
-            )
-            background_tasks.add_task(_regenerate_graph_bg, course_id)
-            background_tasks.add_task(_regenerate_quiz_bg, course_id)
-            if len(doc_ids) >= 2:
-                background_tasks.add_task(_detect_controversy_bg, course_id)
+            from routers.discover import _update_graph_and_controversy
+            import threading
+            def _run_bg():
+                import asyncio
+                try:
+                    asyncio.run(_update_graph_and_controversy(course_id))
+                except Exception as e:
+                    print(f"[upload] 后台图谱更新失败: {e}")
+            threading.Thread(target=_run_bg, daemon=True).start()
         except Exception as e:
-            print(f"[upload] 注册后台任务失败: {e}")
+            print(f"[upload] 启动后台任务失败: {e}")
 
     return SuccessResponse(
         success=True,
@@ -259,39 +259,60 @@ async def delete_document(doc_id: str):
 
 @router.post("/search")
 async def semantic_search(req: SearchRequest):
-    """知识库检索 — 纯 SQLite LIKE 查询（毫秒级返回，零 LLM / 零向量化）"""
-    q = (req.query or "").strip()
-    if len(q) < 2:
-        return {"results": [], "total": 0, "message": "关键词至少 2 个字符"}
+    """语义检索知识库 — 先尝试 ChromaDB 向量检索，回退到 SQLite 关键词匹配"""
 
-    with get_db() as conn:
-        like_q = f"%{q}%"
-        rows = conn.execute(
-            "SELECT content, title, source FROM documents "
-            "WHERE course_id = ? AND content LIKE ? LIMIT ?",
-            (req.course_id, like_q, req.top_k),
-        ).fetchall()
+    results = []
 
-        results = []
-        for row in rows:
-            content = row["content"] or ""
-            idx = content.find(q)
-            if idx < 0:
-                snippet = content[:200]
-            else:
+    # 1. 尝试 ChromaDB 向量检索
+    try:
+        from services.chroma_client import ChromaClient
+        from services.embedding_service import EmbeddingService
+
+        embedder = EmbeddingService()
+        query_vec = await embedder.embed(req.query)
+
+        chroma = ChromaClient()
+        chroma_results = await chroma.search(req.course_id, query_vec, req.top_k)
+
+        if chroma_results:
+            for r in chroma_results[:req.top_k]:
+                results.append({
+                    "content": r.get("content", ""),
+                    "score": round(r.get("score", 0), 4),
+                    "metadata": r.get("metadata", {}),
+                })
+    except Exception as e:
+        print(f"[search] ChromaDB 检索失败，回退到 SQLite: {e}")
+
+    # 2. 回退：SQLite 关键词匹配
+    if not results:
+        with get_db() as conn:
+            # 用 LIKE 做简单关键词匹配
+            like_q = f"%{req.query}%"
+            rows = conn.execute(
+                "SELECT content, title, source FROM documents WHERE course_id = ? AND content LIKE ? LIMIT ?",
+                (req.course_id, like_q, req.top_k),
+            ).fetchall()
+
+            for row in rows:
+                # 截取匹配片段
+                content = row["content"] or ""
+                idx = content.find(req.query)
                 start = max(0, idx - 40)
-                end = min(len(content), idx + len(q) + 40)
+                end = min(len(content), idx + len(req.query) + 40)
                 snippet = content[start:end]
                 if start > 0:
                     snippet = "..." + snippet
                 if end < len(content):
                     snippet = snippet + "..."
-            results.append({
-                "content": snippet or content[:200],
-                "score": 0.5,
-                "metadata": {"source": row["source"], "title": row["title"]},
-            })
+
+                results.append({
+                    "content": snippet or content[:200],
+                    "score": 0.5,
+                    "metadata": {"source": row["source"], "title": row["title"]},
+                })
 
     if not results:
-        return {"results": [], "total": 0, "message": "未找到相关资料，尝试换个关键词吧"}
+        return {"results": [], "message": "未找到相关资料，尝试换个关键词吧"}
+
     return {"results": results, "total": len(results)}
