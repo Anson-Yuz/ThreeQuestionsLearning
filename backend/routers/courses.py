@@ -269,9 +269,11 @@ async def search_courses(
     top_k: int = Query(10, ge=1, le=50),
 ):
     """
-    课程搜索：FTS5 全文索引（< 50ms）
-    FTS5 不可用时回退到 LIKE + Python 排序。
+    课程搜索：FTS5 全文索引（< 50ms）— 纯本地查询，绝无 LLM 调用
+    性能目标：单次响应 < 1 秒（实测 < 50ms）。
     """
+    import time
+    start = time.time()
     q = q.strip()
     if len(q) < 1:
         return {"results": [], "total": 0, "query": q}
@@ -283,11 +285,21 @@ async def search_courses(
     try:
         with get_db() as conn:
             fts_query = f'"{q}"' if not is_zh else q
-            rows = conn.execute(
-                "SELECT course_id, title, description, snippet(courses_fts, 3, '...', '...', 32), rank "
-                "FROM courses_fts WHERE courses_fts MATCH ? ORDER BY rank LIMIT ?",
-                (fts_query, top_k * 2)
-            ).fetchall()
+            # 先尝试带 snippet，若版本不支持则降级
+            try:
+                rows = conn.execute(
+                    "SELECT course_id, title, description, snippet(courses_fts, 3, '...', '...', 32), rank "
+                    "FROM courses_fts WHERE courses_fts MATCH ? ORDER BY rank LIMIT ?",
+                    (fts_query, top_k * 2)
+                ).fetchall()
+                use_snippet = True
+            except Exception:
+                rows = conn.execute(
+                    "SELECT course_id, title, description, '', rank "
+                    "FROM courses_fts WHERE courses_fts MATCH ? ORDER BY rank LIMIT ?",
+                    (fts_query, top_k * 2)
+                ).fetchall()
+                use_snippet = False
         for r in rows:
             results.append({
                 "id": r["course_id"],
@@ -356,7 +368,7 @@ async def search_courses(
     results.sort(key=lambda x: x["score"], reverse=True)
     results = results[:top_k]
 
-    print(f"[search] q={q!r} 命中 {len(results)} 条 (FTS5={bool(results)})")
+    print(f"[search] q={q!r} 命中 {len(results)} 条 (FTS5={bool(results)}) 耗时 {(time.time()-start)*1000:.1f}ms")
     for r in results[:3]:
         print(f"  - {r['title']} (score={r['score']}, docs={r.get('doc_count', 0)})")
 

@@ -47,6 +47,9 @@ def init_db():
                 updated_at INTEGER
             )
         """)
+        # 课程表索引：加速 LIKE 搜索
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_courses_title ON courses(title)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_courses_status ON courses(status, updated_at)")
 
         # 资料表
         conn.execute("""
