@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { NavBar } from '../components/layout/NavBar'
 import KnowledgeGraph from '../components/business/KnowledgeGraph'
@@ -68,12 +68,17 @@ const LearningSpace = () => {
     setGraphError('')
     try {
       const graph = await threeAskApi.generateGraph(courseId)
-      setGraphData(graph)
+      if (mountedRef.current) {
+        setGraphData(graph)
+        setGraphLoading(false)
+      }
     } catch (e) {
-      setGraphError(friendlyMsg(e))
-      setGraphData({ nodes: [], links: [] })
+      if (mountedRef.current) {
+        setGraphError(friendlyMsg(e))
+        setGraphData({ nodes: [], links: [] })
+        setGraphLoading(false)
+      }
     }
-    setGraphLoading(false)
   }, [courseId])
 
   const handleLoadControversy = useCallback(async () => {
@@ -82,22 +87,24 @@ const LearningSpace = () => {
     setControError('')
     try {
       const res = await threeAskApi.getControversies(courseId)
+      if (!mountedRef.current) return
       if (res.controversies?.length > 0) {
         setControversies(res.controversies)
         setControLoading(false)
         return
       }
-      // 无缓存数据，触发异步检测，等待 SSE 推送
       const detectRes = await threeAskApi.detectControversy(courseId)
+      if (!mountedRef.current) return
       if (detectRes.status === 'skipped') {
         setControLoading(false)
         return
       }
-      // 不立即关闭 loading — 等待 controversy_ready SSE 事件
     } catch (e) {
-      setControError(friendlyMsg(e))
-      setControversies([])
-      setControLoading(false)
+      if (mountedRef.current) {
+        setControError(friendlyMsg(e))
+        setControversies([])
+        setControLoading(false)
+      }
     }
   }, [courseId])
 
@@ -114,44 +121,88 @@ const LearningSpace = () => {
     discoverApi.start(courseId, course.originalQuestion).catch(() => {})
   }, [courseId, course?.originalQuestion])
 
-  // SSE 监听：discover_ready / graph_updated / controversy_ready
+  // SSE 监听：discover_ready / graph_updated / controversy_ready（带断线重连 + 页面可见性恢复）
+  const sseRef = useRef<EventSource | null>(null)
+  const mountedRef = useRef(true)
+  const courseIdRef = useRef(courseId)
+  courseIdRef.current = courseId
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
+
   useEffect(() => {
     if (!courseId) return
-    const es = new EventSource(`/api/sse/stream/${courseId}`)
 
-    es.addEventListener('discover_ready', (e: MessageEvent) => {
-      try {
-        const data = JSON.parse(e.data)
-        if (data.results?.length > 0) {
-          setDiscoverResults(data.results)
-          setDiscoverCount(data.results.length)
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+    let stopped = false
+
+    const connect = () => {
+      if (stopped || !courseIdRef.current) return
+      sseRef.current?.close()
+      const es = new EventSource(`/api/sse/stream/${courseIdRef.current}`)
+      sseRef.current = es
+
+      es.addEventListener('discover_ready', (e: MessageEvent) => {
+        try {
+          const data = JSON.parse(e.data)
+          if (data.results?.length > 0 && mountedRef.current) {
+            setDiscoverResults(data.results)
+            setDiscoverCount(data.results.length)
+          }
+        } catch {}
+      })
+
+      es.addEventListener('graph_updated', (e: MessageEvent) => {
+        try {
+          const data = JSON.parse(e.data)
+          if (data.nodes && mountedRef.current) {
+            setGraphData(data)
+            setGraphLoading(false)
+            setGraphError('')
+          }
+        } catch {}
+      })
+
+      es.addEventListener('controversy_ready', (e: MessageEvent) => {
+        try {
+          const data = JSON.parse(e.data)
+          if (data.controversies && mountedRef.current) {
+            setControversies(data.controversies)
+            setControError('')
+            setControLoading(false)
+          }
+        } catch {}
+      })
+
+      es.onerror = () => {
+        es.close()
+        if (!stopped && courseIdRef.current) {
+          reconnectTimer = setTimeout(connect, 5000)
         }
-      } catch {}
-    })
+      }
+    }
 
-    es.addEventListener('graph_updated', (e: MessageEvent) => {
-      try {
-        const data = JSON.parse(e.data)
-        if (data.nodes) {
-          setGraphData(data)
-          setGraphLoading(false)
-          setGraphError('')
+    connect()
+
+    // 页面可见性变化 → 恢复连接
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        const es = sseRef.current
+        if (!es || es.readyState === EventSource.CLOSED) {
+          connect()
         }
-      } catch {}
-    })
+      }
+    }
+    document.addEventListener('visibilitychange', onVisible)
 
-    es.addEventListener('controversy_ready', (e: MessageEvent) => {
-      try {
-        const data = JSON.parse(e.data)
-        if (data.controversies) {
-          setControversies(data.controversies)
-          setControError('')
-          setControLoading(false)
-        }
-      } catch {}
-    })
-
-    return () => es.close()
+    return () => {
+      stopped = true
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+      sseRef.current?.close()
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [courseId])
 
   // 加载知识库文档
