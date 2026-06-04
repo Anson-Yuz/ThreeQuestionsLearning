@@ -77,6 +77,14 @@ export const coursesApi = {
     return apiClient.get('/courses/search', { q, top_k: topK });
   },
 
+  // 读取图谱缓存（命中即返回，未命中触发后台生成并返回 generating）
+  getCachedGraph: (courseId: string): Promise<{
+    status: 'ready' | 'generating'
+    data: { nodes: any[]; links: any[] }
+  }> => {
+    return apiClient.get(`/courses/${courseId}/graph`);
+  },
+
   // 获取单个课程详情
   get: (courseId: string): Promise<Course> => {
     return apiClient.get(`/courses/${courseId}`);

@@ -17,12 +17,14 @@ class GraphService:
         self.llm = llm_service
 
     async def generate_graph(self, course_id: str, documents: List[Dict]) -> Dict:
-        """生成知识图谱 — 无资料或LLM失败时返回空图谱"""
+        """生成知识图谱 — 选取 top-k 最相关片段再调用 LLM"""
         if not documents:
             print(f"[graph] 课程 {course_id}: 无资料，跳过图谱生成")
             return {"nodes": [], "links": []}
 
-        combined_text = "\n\n".join([doc.get("content", "")[:2000] for doc in documents[:5]])
+        # 选 top-k 最相关片段（基于关键词命中）
+        top_fragments = self._select_top_fragments(documents, top_k=6, fragment_len=500)
+        combined_text = "\n\n---\n\n".join(top_fragments)
         if not combined_text.strip():
             print(f"[graph] 课程 {course_id}: 资料内容为空")
             return {"nodes": [], "links": []}
@@ -173,3 +175,31 @@ relation 可选: prerequisite（前置依赖）、related（相关）、contradi
     def update_graph_incremental(self, existing_graph: Dict, new_document: Dict) -> Dict:
         """增量更新图谱"""
         return existing_graph
+
+    def _select_top_fragments(self, documents: List[Dict], top_k: int = 6, fragment_len: int = 500) -> List[str]:
+        """从多份资料中选取 top-k 个最相关片段用于 LLM prompt
+
+        评分规则：每个文档取首段（首 fragment_len 字符），并按文档标题与正文的 token 重叠度排序。
+        这样 LLM 看到的资料更具代表性，且总输入 token 控制在 fragment_len × top_k 之内。
+        """
+        if not documents:
+            return []
+
+        # 提取每个文档的标题作为 query
+        candidates = []
+        for doc in documents:
+            content = (doc.get("content") or "").strip()
+            if not content:
+                continue
+            title = (doc.get("title") or "").strip()
+            head = content[:fragment_len]
+            # 评分：标题 token 在内容中出现的次数（粗略代表相关性）
+            score = 0
+            if title:
+                title_tokens = [t for t in title if len(t) > 1] or [title]
+                score = sum(1 for t in title_tokens if t in head)
+            candidates.append((score, len(head), head))
+
+        # 按相关分降序，长度降序（更长的片段通常更完整）
+        candidates.sort(key=lambda x: (-x[0], -x[1]))
+        return [c[2] for c in candidates[:top_k]]

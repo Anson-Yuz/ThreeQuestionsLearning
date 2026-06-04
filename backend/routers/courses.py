@@ -1,8 +1,10 @@
 import uuid
 import json
 import re
+import asyncio
+import threading
 from datetime import datetime
-# 端点: /api/courses/create /api/courses/list /api/courses/search /api/courses/{course_id} /api/courses/{course_id}/status /api/courses/{course_id}/progress
+# 端点: /api/courses/create /api/courses/list /api/courses/search /api/courses/{course_id}/graph /api/courses/{course_id} /api/courses/{course_id}/status /api/courses/{course_id}/progress
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
 from typing import Optional, List
 
@@ -162,6 +164,45 @@ def _make_snippet(text: str, query: str, max_len: int = 120) -> str:
     if end < len(text):
         snippet = snippet + "..."
     return snippet
+
+
+@router.get("/{course_id}/graph")
+async def get_cached_graph(course_id: str):
+    """
+    课程图谱缓存接口 — 优先返回 SQLite 缓存
+    命中：直接返回 JSON，< 50ms
+    未命中：触发后台线程生成，返回 {status: 'generating', nodes: [], links: []}
+    """
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT graph_data FROM knowledge_graphs WHERE course_id = ?",
+            (course_id,)
+        ).fetchone()
+
+    if row and row["graph_data"]:
+        try:
+            data = json.loads(row["graph_data"])
+            if data.get("nodes") and len(data["nodes"]) > 0:
+                return {"status": "ready", "data": data}
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    # 未命中，触发后台生成（用 threading 启动独立事件循环）
+    try:
+        from services.llm_service import LLMService
+        from services.graph_service import GraphService
+        from routers.discover import _update_graph_and_controversy
+
+        def _bg():
+            try:
+                asyncio.run(_update_graph_and_controversy(course_id))
+            except Exception as e:
+                print(f"[graph-cache] 后台生成失败 {course_id}: {e}")
+        threading.Thread(target=_bg, daemon=True).start()
+    except Exception as e:
+        print(f"[graph-cache] 启动后台任务失败: {e}")
+
+    return {"status": "generating", "data": {"nodes": [], "links": []}}
 
 
 @router.get("/search")

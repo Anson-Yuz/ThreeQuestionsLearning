@@ -67,6 +67,21 @@ const LearningSpace = () => {
     if (!courseId) return
     setGraphLoading(true)
     setGraphError('')
+    // 1) 优先读取缓存（< 50ms）
+    try {
+      const cached = await coursesApi.getCachedGraph(courseId)
+      if (mountedRef.current) {
+        if (cached.status === 'ready' && cached.data?.nodes?.length) {
+          setGraphData(cached.data as GraphData)
+          setGraphLoading(false)
+          return
+        }
+        // status === 'generating'：保持 loading，等 SSE graph_updated
+      }
+    } catch {
+      // 缓存接口异常时降级到 generate
+    }
+    // 2) 缓存未命中或失败 → 强制重新生成
     try {
       const graph = await threeAskApi.generateGraph(courseId)
       if (mountedRef.current) {
