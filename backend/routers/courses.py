@@ -1,8 +1,9 @@
 import uuid
 import json
+import re
 from datetime import datetime
-# 端点: /api/courses/create /api/courses/list /api/courses/{course_id} /api/courses/{course_id}/status /api/courses/{course_id}/progress
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+# 端点: /api/courses/create /api/courses/list /api/courses/search /api/courses/{course_id} /api/courses/{course_id}/status /api/courses/{course_id}/progress
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
 from typing import Optional, List
 
 from database import get_db
@@ -36,26 +37,21 @@ async def create_course(
 ):
     """创建课程：用户提问触发"""
 
-    # 1. 生成课程 ID
     course_id = str(uuid.uuid4())
     now = int(datetime.now().timestamp() * 1000)
 
-    # 2. 从问题中提取标题（简化版，实际可调用 LLM）
     title = req.question[:50] if len(req.question) > 50 else req.question
     if len(title) < 10:
         title = f"课程：{title}"
 
-    # 3. 提取关键词（简化版）
     keywords = json.dumps(["AI", "学习", "自定义"])
 
-    # 4. 保存到数据库
     with get_db() as conn:
         conn.execute("""
             INSERT INTO courses (id, title, keywords, original_question, status, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (course_id, title, keywords, req.question, "active", now, now))
 
-        # 同时创建学习进度记录
         conn.execute("""
             INSERT INTO learning_progress (id, course_id, created_at, updated_at)
             VALUES (?, ?, ?, ?)
@@ -63,10 +59,8 @@ async def create_course(
 
         conn.commit()
 
-        # 获取刚创建的课程
         row = conn.execute("SELECT * FROM courses WHERE id = ?", (course_id,)).fetchone()
 
-    # 5. 后台触发 AI 资料补充（异步）
     background_tasks.add_task(ai_supplement_background, course_id, req.question)
 
     return format_course(row)
@@ -95,17 +89,13 @@ async def list_courses(
 
         rows = conn.execute(query, params).fetchall()
 
-        # 获取每个课程的进度
         courses = []
         for row in rows:
             course = format_course(row)
-
-            # 获取三问进度
             progress_row = conn.execute(
                 "SELECT q1_completed, q2_completed, q3_completed, overall_progress FROM learning_progress WHERE course_id = ?",
                 (row["id"],)
             ).fetchone()
-
             if progress_row:
                 course["progress"] = progress_row["overall_progress"] or 0
                 course["three_ask_progress"] = {
@@ -113,10 +103,159 @@ async def list_courses(
                     "question2": bool(progress_row["q2_completed"]),
                     "question3": bool(progress_row["q3_completed"])
                 }
-
             courses.append(course)
 
         return {"courses": courses, "total": len(courses)}
+
+
+# ========== 课程搜索（必须在 /{course_id} 之前注册，否则被通配符路由吞掉）==========
+
+_CHINESE_RE = re.compile(r'[一-鿿]')
+
+
+def _has_chinese(text: str) -> bool:
+    return bool(_CHINESE_RE.search(text or ""))
+
+
+def _tokenize(text: str) -> List[str]:
+    """中英混合分词：中文用 jieba，英文按空白/标点切分"""
+    text = (text or "").lower()
+    if not text:
+        return []
+    if _has_chinese(text):
+        try:
+            import jieba
+            return [t for t in jieba.lcut(text) if len(t) > 1]
+        except Exception:
+            return _CHINESE_RE.findall(text)
+    return [t for t in re.split(r'[\s,.;:!?()\[\]{}<>\'"`/\\|+\-]+', text) if len(t) > 1]
+
+
+def _make_snippet(text: str, query: str, max_len: int = 120) -> str:
+    """在文本中查找 query 首次出现位置，返回带省略号的片段"""
+    if not text or not query:
+        return (text or "")[:max_len]
+    lower = text.lower()
+    q_lower = query.lower()
+    idx = lower.find(q_lower)
+    if idx < 0:
+        tokens = _tokenize(query)
+        for tk in tokens:
+            j = lower.find(tk)
+            if j >= 0:
+                idx = j
+                break
+    if idx < 0:
+        return text[:max_len]
+    start = max(0, idx - 30)
+    end = min(len(text), idx + max_len - 30)
+    snippet = text[start:end]
+    if start > 0:
+        snippet = "..." + snippet
+    if end < len(text):
+        snippet = snippet + "..."
+    return snippet
+
+
+@router.get("/search")
+async def search_courses(
+    q: str = Query(..., min_length=1, description="搜索关键词"),
+    top_k: int = Query(10, ge=1, le=50),
+    prefer_chinese: bool = Query(True, description="中文资料优先")
+):
+    """
+    课程搜索：标题匹配 + 文档内容相关性 + 中文资料加权
+    综合分 = 0.55 * 内容相关 + 0.30 * 标题匹配 + 0.15 * 中文加权
+    """
+    if not q.strip():
+        return {"results": [], "total": 0, "query": q}
+
+    q_tokens = _tokenize(q)
+    is_zh_query = _has_chinese(q)
+
+    with get_db() as conn:
+        courses = conn.execute(
+            "SELECT id, title, keywords, original_question, status, created_at, updated_at "
+            "FROM courses WHERE status != 'deleted'"
+        ).fetchall()
+
+    results = []
+    for c in courses:
+        title = c["title"] or ""
+        title_lower = title.lower()
+        course_id = c["id"]
+
+        # 标题匹配分
+        if q.lower() in title_lower:
+            title_score = 1.0
+        elif any(tk in title_lower for tk in q_tokens):
+            title_score = 0.6
+        else:
+            title_score = 0.0
+
+        with get_db() as conn:
+            docs = conn.execute(
+                "SELECT title, content, source_type FROM documents WHERE course_id = ?",
+                (course_id,)
+            ).fetchall()
+
+        all_text = " ".join((d["title"] or "") + " " + (d["content"] or "") for d in docs)
+        if not all_text.strip():
+            content_score = 0.0
+            best_snippet = ""
+            chinese_ratio = 0.0
+        else:
+            text_lower = all_text.lower()
+            token_hits = sum(1 for tk in q_tokens if tk in text_lower)
+            content_score = min(1.0, token_hits / max(1, len(q_tokens)))
+
+            if prefer_chinese:
+                chinese_chars = len(_CHINESE_RE.findall(all_text))
+                chinese_ratio = chinese_chars / max(1, len(all_text))
+            else:
+                chinese_ratio = 0.5
+
+            best_snippet = _make_snippet(docs[0]["content"] or docs[0]["title"] or "", q)
+
+        if is_zh_query:
+            chinese_bonus = chinese_ratio
+        else:
+            chinese_bonus = 0.5 if chinese_ratio < 0.3 else 0.0
+
+        final_score = (
+            0.55 * content_score
+            + 0.30 * title_score
+            + 0.15 * chinese_bonus
+        )
+
+        if final_score < 0.25:
+            continue
+
+        results.append({
+            "id": c["id"],
+            "title": title,
+            "keywords": json.loads(c["keywords"]) if c["keywords"] else [],
+            "original_question": c["original_question"],
+            "status": c["status"],
+            "created_at": c["created_at"],
+            "updated_at": c["updated_at"],
+            "doc_count": len(docs),
+            "score": round(final_score, 4),
+            "snippet": best_snippet,
+            "chinese_ratio": round(chinese_ratio, 3),
+        })
+
+    results.sort(key=lambda x: x["score"], reverse=True)
+    results = results[:top_k]
+
+    print(f"[search] q={q!r} 命中 {len(results)} 条 (中文查询={is_zh_query})")
+    for r in results[:5]:
+        print(f"  - {r['title']} (score={r['score']}, zh={r['chinese_ratio']}, docs={r['doc_count']})")
+
+    return {"results": results, "total": len(results), "query": q}
+
+
+# ========== 课程详情（通配符路由，必须在 /search 之后）==========
 
 @router.get("/{course_id}")
 async def get_course(course_id: str):
@@ -127,7 +266,6 @@ async def get_course(course_id: str):
         if not row:
             raise HTTPException(status_code=404, detail="课程不存在")
 
-        # 更新最后访问时间
         conn.execute(
             "UPDATE courses SET updated_at = ? WHERE id = ?",
             (int(datetime.now().timestamp() * 1000), course_id)
@@ -136,7 +274,6 @@ async def get_course(course_id: str):
 
         course = format_course(row)
 
-        # 获取三问进度
         progress_row = conn.execute(
             "SELECT q1_completed, q2_completed, q3_completed, overall_progress FROM learning_progress WHERE course_id = ?",
             (course_id,)
@@ -176,7 +313,6 @@ async def update_course_progress(course_id: str, req: CourseUpdateProgress):
         if not row:
             raise HTTPException(status_code=404, detail="课程进度记录不存在")
 
-        # 根据进度推算三问完成度
         q1 = 1 if req.progress >= 33 else 0
         q2 = 1 if req.progress >= 66 else 0
         q3 = 1 if req.progress >= 100 else 0
