@@ -5,6 +5,7 @@ import CourseCard from '../components/business/CourseCard'
 import ActionSheet from '../components/ui/ActionSheet'
 import EmptyState from '../components/ui/EmptyState'
 import DiscoverResultsPanel from '../components/business/DiscoverResultsPanel'
+import UploadModal from '../components/business/UploadModal'
 import { useCourseStore } from '../stores/courseStore'
 import { discoverApi, DiscoverResult } from '../api/discover'
 
@@ -15,6 +16,7 @@ const Home = () => {
   const [searchValue, setSearchValue] = useState('')
   const [showMenu, setShowMenu] = useState(false)
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null)
+  const [showUpload, setShowUpload] = useState(false)
 
   // 搜索 & 导入状态
   const [isSearching, setIsSearching] = useState(false)
@@ -99,7 +101,18 @@ const Home = () => {
                 {courses.length > 0 ? `已掌握 ${completedCount} 个课程` : '开始你的第一个学习之旅'}
               </p>
             </div>
-            <button className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center">
+            <button
+              onClick={() => {
+                if (courses.length > 0) {
+                  setSelectedCourseId(courses[0].id)
+                  setShowUpload(true)
+                } else {
+                  alert('请先创建课程')
+                }
+              }}
+              className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center active:scale-95 transition-transform"
+              aria-label="上传资料"
+            >
               <UploadIcon className="w-5 h-5 text-white" />
             </button>
           </div>
@@ -192,11 +205,20 @@ const Home = () => {
           visible={showMenu}
           onClose={() => setShowMenu(false)}
           actions={[
-            { title: '上传资料', icon: 'upload', action: () => {} },
+            { title: '上传资料', icon: 'upload', action: () => { setShowMenu(false); setShowUpload(true) } },
             { title: '导出课程', icon: 'export', action: () => {} },
             { title: '归档', icon: 'archive', action: () => { archiveCourse(selectedCourseId); setShowMenu(false) }, destructive: false },
             { title: '删除', icon: 'delete', action: () => { deleteCourse(selectedCourseId); setShowMenu(false) }, destructive: true },
           ]}
+        />
+      )}
+
+      {showUpload && selectedCourseId && (
+        <UploadModal
+          courseId={selectedCourseId}
+          courseTitle={courses.find(c => c.id === selectedCourseId)?.title}
+          onClose={() => setShowUpload(false)}
+          onUploaded={() => fetchCourses()}
         />
       )}
     </div>
