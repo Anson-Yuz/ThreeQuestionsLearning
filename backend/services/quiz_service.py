@@ -39,34 +39,52 @@ class QuizService:
         return quizzes
 
     async def _generate_question(self, dimension: str, difficulty: float, context: str, question_num: int = 1) -> Optional[Dict]:
-        """生成单道题目 — LLM不可用或失败时返回None"""
+        """生成单道题目 — LLM不可用、失败或超时时返回None"""
         if not self.llm or not context.strip():
             return None
 
-        prompt = f"""基于以下学习资料，为"{dimension}"认知层级生成第{question_num}道测评题目。
+        prompt = f"""你是中文出题老师。基于以下学习资料，为"{dimension}"认知层级生成第{question_num}道测评题目。
 
-要求：
-- 难度系数: {difficulty}
-- 题型: {self.QUESTION_TYPES[dimension]}
+【必须遵守】
+- 必须用中文出题
+- 题目、选项、解析、知识点 全部用中文
+- 题目中如引用代码或文件名，避免包含半角双引号以免破坏JSON
+- 题目长度 ≤ 60 字
+
+字段定义：
+- bloom_level: "{dimension}"
+- question_type: {self.QUESTION_TYPES[dimension]}
 
 学习资料：
-{context[:4000]}
+{context[:3500]}
 
-请生成包含以下字段的JSON（不要包含markdown代码块标记）：
+输出JSON（不要markdown代码块）：
 {{
   "id": "question_{dimension}_{question_num}",
   "dimension": "{dimension}",
   "bloom_level": "{dimension}",
   "difficulty": {difficulty},
   "question_type": "{self.QUESTION_TYPES[dimension][0]}",
-  "question": "题目内容",
-  "options": ["A. 选项1", "B. 选项2", "C. 选项3", "D. 选项4"],
+  "question": "中文题目内容",
+  "options": ["A. 中文选项1", "B. 中文选项2", "C. 中文选项3", "D. 中文选项4"],
   "correct_answer": "A",
-  "explanation": "答案解析",
-  "knowledge_points": ["知识点1", "知识点2"]
+  "explanation": "中文答案解析",
+  "knowledge_points": ["知识点1"]
 }}"""
 
-        result = await self.llm.chat_json(prompt, temperature=0.3, max_tokens=2048)
+        try:
+            import asyncio
+            result = await asyncio.wait_for(
+                self.llm.chat_json(prompt, temperature=0.3, max_tokens=2048),
+                timeout=30.0
+            )
+        except asyncio.TimeoutError:
+            print(f"err: Quiz generation timeout for {dimension} #{question_num}")
+            return None
+        except Exception as e:
+            print(f"err: Quiz generation exception for {dimension} #{question_num}: {e}")
+            return None
+
         if result and result.get("question"):
             return result
         print(f"err: Quiz generation failed for {dimension} #{question_num}")
