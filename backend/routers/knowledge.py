@@ -85,6 +85,65 @@ async def upload_document(
 
     return SuccessResponse(success=True, message="文件上传成功", data={"doc_id": doc_id})
 
+
+@router.post("/upload-files")
+async def upload_multiple_files(
+    course_id: str,
+    files: List[UploadFile] = File(...),
+    background_tasks: BackgroundTasks = None
+):
+    """批量上传资料（多文件）"""
+    if not files:
+        raise HTTPException(400, "未选择文件")
+
+    doc_ids = []
+    now = int(datetime.now().timestamp() * 1000)
+    with get_db() as conn:
+        for file in files:
+            content = await file.read()
+            ext = ALLOWED_TYPES.get(file.content_type)
+            if not ext:
+                ext = Path(file.filename or "").suffix.lower() or ".txt"
+            if ext not in {".pdf", ".doc", ".docx", ".md", ".txt"}:
+                continue
+            if len(content) > MAX_FILE_SIZES.get(file.content_type, 20 * 1024 * 1024):
+                continue
+            file_name = f"{uuid.uuid4().hex}{ext}"
+            course_upload_dir = UPLOAD_DIR / course_id
+            course_upload_dir.mkdir(parents=True, exist_ok=True)
+            file_path = course_upload_dir / file_name
+            with open(file_path, "wb") as f:
+                f.write(content)
+            doc_id = str(uuid.uuid4())
+            content_text = f"文件内容：{file.filename}\n请使用解析服务提取完整文本。"
+            conn.execute("""
+                INSERT INTO documents (id, course_id, title, content, file_path, file_type, source, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (doc_id, course_id, file.filename, content_text, str(file_path), file.content_type, "user", now))
+            doc_ids.append(doc_id)
+        conn.commit()
+
+    # 触发后台图谱+争议生成
+    if doc_ids and background_tasks:
+        try:
+            from routers.discover import _update_graph_and_controversy
+            import threading
+            def _run_bg():
+                import asyncio
+                try:
+                    asyncio.run(_update_graph_and_controversy(course_id))
+                except Exception as e:
+                    print(f"[upload] 后台图谱更新失败: {e}")
+            threading.Thread(target=_run_bg, daemon=True).start()
+        except Exception as e:
+            print(f"[upload] 启动后台任务失败: {e}")
+
+    return SuccessResponse(
+        success=True,
+        message=f"已上传 {len(doc_ids)} 个文件",
+        data={"doc_ids": doc_ids, "count": len(doc_ids)}
+    )
+
 async def vectorize_document(course_id: str, doc_id: str, content: str):
     """后台向量化文档"""
     print(f"正在向量化文档 {doc_id}，内容长度: {len(content)}")
