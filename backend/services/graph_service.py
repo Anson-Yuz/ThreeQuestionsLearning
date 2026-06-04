@@ -130,9 +130,8 @@ class GraphService:
             if not quality_ok:
                 print(
                     f"[graph] 课程 {course_id}: 质量不达标 ({reason})，"
-                    f"回退到关键词占位图谱并触发后台重新生成"
+                    f"回退到关键词占位图谱"
                 )
-                self._schedule_regenerate(course_id, course_title)
                 return self._calculate_layout(self._quick_fallback_graph(documents))
 
             print(
@@ -162,48 +161,6 @@ class GraphService:
             return False, "缺少阈值概念"
 
         return True, ""
-
-    def _schedule_regenerate(self, course_id: str, course_title: str) -> None:
-        """质量不达标时触发后台线程重新生成（与请求事件循环解耦）"""
-        import threading
-
-        def _runner():
-            try:
-                import asyncio
-                from database import get_db
-                from services.llm_service import LLMService
-
-                with get_db() as conn:
-                    rows = conn.execute(
-                        "SELECT id, title, content FROM documents WHERE course_id = ? LIMIT 5",
-                        (course_id,),
-                    ).fetchall()
-                docs = [
-                    {"id": r["id"], "title": r["title"], "content": r["content"] or ""}
-                    for r in rows
-                ]
-                if not docs:
-                    return
-                llm = LLMService()
-                gs = GraphService(llm)
-                graph = asyncio.run(
-                    gs.generate_graph(course_id, docs, course_title=course_title)
-                )
-                from datetime import datetime
-
-                now = int(datetime.now().timestamp() * 1000)
-                with get_db() as conn:
-                    conn.execute(
-                        "INSERT OR REPLACE INTO knowledge_graphs (course_id, graph_data, updated_at) "
-                        "VALUES (?, ?, ?)",
-                        (course_id, json.dumps(graph, ensure_ascii=False), now),
-                    )
-                    conn.commit()
-                print(f"[graph] 课程 {course_id} 后台重新生成完成")
-            except Exception as e:
-                print(f"[graph] 课程 {course_id} 后台重新生成失败: {e}")
-
-        threading.Thread(target=_runner, daemon=True).start()
 
     def _quick_fallback_graph(self, documents: List[Dict]) -> Dict:
         """基于关键词的快速占位图谱（保证空状态可显示基本结构）"""

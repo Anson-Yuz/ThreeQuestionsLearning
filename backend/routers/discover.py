@@ -2,14 +2,13 @@ import uuid
 import json
 import asyncio
 import re
-import threading
 from datetime import datetime
 from urllib.parse import urlparse, quote
 from typing import List, Optional
 
 import httpx
 from bs4 import BeautifulSoup
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, BackgroundTasks
 
 from database import get_db
 from models import SuccessResponse, SearchDiscoverRequest, ImportRequest, CourseCreate
@@ -325,7 +324,7 @@ async def start_discover(req: dict, background_tasks: BackgroundTasks):
 
 
 @router.post("/import-urls")
-async def import_urls(req: ImportRequest):
+async def import_urls(req: ImportRequest, background_tasks: BackgroundTasks):
     """批量导入 URL 到知识库（支持自动创建课程）"""
     urls = req.urls
     course_id = req.course_id
@@ -366,16 +365,18 @@ async def import_urls(req: ImportRequest):
         except Exception:
             pass
 
-    # 导入完成后，异步触发图谱更新 + 争议分析
+    # 导入完成后，异步触发图谱/测评/争议后台生成
+    # 使用 FastAPI BackgroundTasks（与请求共用事件循环，无 threading 冲突）
     if len(imported) > 0:
-        def _run_bg():
-            try:
-                asyncio.run(_update_graph_and_controversy(course_id))
-            except Exception as e:
-                print(f"[import] 后台任务失败: {e}", flush=True)
-                import traceback
-                traceback.print_exc()
-        threading.Thread(target=_run_bg, daemon=True).start()
+        from routers.three_ask import (
+            _regenerate_graph_bg,
+            _regenerate_quiz_bg,
+            _detect_controversy_bg,
+        )
+        background_tasks.add_task(_regenerate_graph_bg, course_id)
+        background_tasks.add_task(_regenerate_quiz_bg, course_id)
+        if len(imported) >= 2:
+            background_tasks.add_task(_detect_controversy_bg, course_id)
 
     return {
         "imported": len(imported),
