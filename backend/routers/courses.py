@@ -3,7 +3,6 @@ import json
 import re
 import time
 import asyncio
-import threading
 from datetime import datetime
 # 端点: /api/courses/create /api/courses/list /api/courses/search /api/courses/{course_id}/graph /api/courses/{course_id} /api/courses/{course_id}/status /api/courses/{course_id}/progress
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
@@ -168,7 +167,7 @@ def _make_snippet(text: str, query: str, max_len: int = 120) -> str:
 
 
 @router.get("/{course_id}/graph")
-async def get_cached_graph(course_id: str):
+async def get_cached_graph(course_id: str, background_tasks: BackgroundTasks):
     """
     课程图谱缓存接口 — 优先返回 SQLite 缓存
     命中：直接返回 JSON，< 50ms
@@ -188,36 +187,56 @@ async def get_cached_graph(course_id: str):
         except (json.JSONDecodeError, TypeError):
             pass
 
-    # 未命中，触发后台生成（用 threading 启动独立事件循环）
-    try:
-        from services.llm_service import LLMService
-        from services.graph_service import GraphService
-        from routers.discover import _update_graph_and_controversy
-
-        def _bg():
-            try:
-                asyncio.run(_update_graph_and_controversy(course_id))
-            except Exception as e:
-                print(f"[graph-cache] 后台生成失败 {course_id}: {e}")
-        threading.Thread(target=_bg, daemon=True).start()
-    except Exception as e:
-        print(f"[graph-cache] 启动后台任务失败: {e}")
+    # FastAPI 原生 BackgroundTasks — 与请求共用事件循环，无 threading 冲突
+    from routers.discover import _update_graph_and_controversy
+    background_tasks.add_task(_update_graph_and_controversy, course_id)
 
     return {"status": "generating", "data": {"nodes": [], "links": []}}
 
 
+async def _async_generate_quiz(course_id: str):
+    """后台异步生成测评题库 — 与请求同事件循环，FastAPI BackgroundTasks 调用"""
+    try:
+        from services.llm_service import LLMService
+        from services.quiz_service import QuizService
+        with get_db() as conn:
+            docs = conn.execute(
+                "SELECT id, title, content FROM documents WHERE course_id = ? LIMIT 5",
+                (course_id,)).fetchall()
+        documents = [{"id": d["id"], "title": d["title"], "content": d["content"] or ""} for d in docs]
+        if not documents:
+            print(f"[quiz-cache] 课程 {course_id} 无资料，跳过生成")
+            return
+        llm = LLMService()
+        qs = QuizService(llm)
+        quizzes = await qs.generate_quiz(course_id, documents, questions_per_level=2)
+        if not quizzes:
+            print(f"[quiz-cache] 课程 {course_id} LLM 未能生成题目")
+            return
+        now = int(datetime.now().timestamp() * 1000)
+        with get_db() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO course_quizzes (course_id, quizzes_json, updated_at) VALUES (?, ?, ?)",
+                (course_id, json.dumps(quizzes, ensure_ascii=False), now))
+            conn.commit()
+        from routers.sse import push_event
+        push_event(course_id, "quiz_ready", {"quizzes": quizzes, "count": len(quizzes)})
+        print(f"[quiz-cache] 课程 {course_id} 生成 {len(quizzes)} 道题已缓存")
+    except Exception as e:
+        print(f"[quiz-cache] 后台生成失败 {course_id}: {e}")
+
+
 @router.get("/{course_id}/quizzes")
-async def get_cached_quizzes(course_id: str):
+async def get_cached_quizzes(course_id: str, background_tasks: BackgroundTasks):
     """
     课程测评缓存接口 — 优先返回 SQLite 缓存
     命中：< 50ms 返回题库
-    未命中：触发后台线程生成（每维度 2 道，共 ~12 道），返回 {status: 'generating'}
+    未命中：通过 FastAPI BackgroundTasks 启动异步生成（同事件循环，无 threading 冲突）
     """
     with get_db() as conn:
         row = conn.execute(
             "SELECT quizzes_json FROM course_quizzes WHERE course_id = ?",
-            (course_id,)
-        ).fetchone()
+            (course_id,)).fetchone()
 
     if row and row["quizzes_json"]:
         try:
@@ -227,52 +246,19 @@ async def get_cached_quizzes(course_id: str):
         except (json.JSONDecodeError, TypeError):
             pass
 
-    # 未命中，触发后台生成
-    def _bg():
-        try:
-            from services.llm_service import LLMService
-            from services.quiz_service import QuizService
-            with get_db() as conn:
-                docs = conn.execute(
-                    "SELECT id, title, content FROM documents WHERE course_id = ? LIMIT 5",
-                    (course_id,)
-                ).fetchall()
-            documents = [{"id": d["id"], "title": d["title"], "content": d["content"] or ""} for d in docs]
-            if not documents:
-                print(f"[quiz-cache] 课程 {course_id} 无资料，跳过生成")
-                return
-            llm = LLMService()
-            qs = QuizService(llm)
-            quizzes = asyncio.run(qs.generate_quiz(course_id, documents, questions_per_level=2))
-            if not quizzes:
-                print(f"[quiz-cache] 课程 {course_id} LLM 未能生成题目")
-                return
-            now = int(datetime.now().timestamp() * 1000)
-            with get_db() as conn:
-                conn.execute(
-                    "INSERT OR REPLACE INTO course_quizzes (course_id, quizzes_json, updated_at) VALUES (?, ?, ?)",
-                    (course_id, json.dumps(quizzes, ensure_ascii=False), now)
-                )
-                conn.commit()
-            from routers.sse import push_event
-            push_event(course_id, "quiz_ready", {"quizzes": quizzes, "count": len(quizzes)})
-            print(f"[quiz-cache] 课程 {course_id} 生成 {len(quizzes)} 道题已缓存")
-        except Exception as e:
-            print(f"[quiz-cache] 后台生成失败 {course_id}: {e}")
-
-    threading.Thread(target=_bg, daemon=True).start()
+    background_tasks.add_task(_async_generate_quiz, course_id)
     return {"status": "generating", "data": []}
 
 
 @router.get("/{course_id}/quick-quiz")
-async def get_quick_quiz(course_id: str):
+async def get_quick_quiz(course_id: str, background_tasks: BackgroundTasks):
     """
     快速测评接口：< 100ms 返回 10 道基于关键词的简单题
-    同时后台启动 LLM 生成高质量题目，完成后通过 SSE `quiz_ready` 推送
+    同时通过 FastAPI BackgroundTasks 启动 LLM 升级（同事件循环，无 threading 冲突）
     """
     start = time.time()
 
-    # 1. 同步：基于关键词立即生成 10 道题
+    # 1. 同步：基于关键词立即生成 10 道题（本地，无 LLM）
     try:
         from services.quiz_service import generate_quick_quiz
         quick_questions = generate_quick_quiz(course_id, get_db, target_count=10)
@@ -280,18 +266,12 @@ async def get_quick_quiz(course_id: str):
         print(f"[quick-quiz] 关键词生成失败: {e}")
         quick_questions = []
 
-    # 2. 后台：用 LLM 生成高质量题目，完成后写缓存 + 推 SSE
+    # 2. 后台：通过 FastAPI BackgroundTasks 启动 async LLM 升级
     try:
         from services.quiz_service import _background_generate_llm_quiz
-
-        def _bg():
-            try:
-                _background_generate_llm_quiz(course_id)
-            except Exception as e:
-                print(f"[quick-quiz] 后台任务异常: {e}")
-        threading.Thread(target=_bg, daemon=True).start()
+        background_tasks.add_task(_background_generate_llm_quiz, course_id)
     except Exception as e:
-        print(f"[quick-quiz] 启动后台任务失败: {e}")
+        print(f"[quick-quiz] 添加后台任务失败: {e}")
 
     elapsed = (time.time() - start) * 1000
     print(f"[quick-quiz] 课程 {course_id} 返回 {len(quick_questions)} 道关键词题，耗时 {elapsed:.1f}ms")

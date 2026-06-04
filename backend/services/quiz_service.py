@@ -210,8 +210,8 @@ def generate_quick_quiz(course_id: str, db, target_count: int = 10) -> List[Dict
     return questions
 
 
-def _background_generate_llm_quiz(course_id: str):
-    """后台 LLM 生成高质量题目 + 写缓存 + 推 SSE"""
+async def _background_generate_llm_quiz(course_id: str):
+    """后台异步生成高质量题目 + 写缓存 + 推 SSE（与请求同事件循环）"""
     try:
         from services.llm_service import LLMService
         from database import get_db
@@ -225,8 +225,7 @@ def _background_generate_llm_quiz(course_id: str):
             return
         llm = LLMService()
         qs = QuizService(llm)
-        import asyncio
-        quizzes = asyncio.run(qs.generate_quiz(course_id, documents, questions_per_level=2))
+        quizzes = await qs.generate_quiz(course_id, documents, questions_per_level=2)
         if not quizzes:
             return
         import json
