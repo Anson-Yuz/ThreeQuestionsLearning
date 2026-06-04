@@ -12,7 +12,6 @@ import { coursesApi, Course } from '../api/courses'
 import { threeAskApi, KnowledgeGraph as GraphData } from '../api/threeAsk'
 import { discoverApi, DiscoverResult } from '../api/discover'
 import { knowledgeApi, Document } from '../api/knowledge'
-import UploadPanel from '../components/business/UploadPanel'
 
 const friendlyMsg = (err: unknown): string => {
   if (err instanceof Error) {
@@ -361,11 +360,6 @@ const LearningSpace = () => {
         <div className="mb-3">
           <span className="text-sm font-semibold text-gray-900 dark:text-white">复合知识库</span>
         </div>
-        {courseId && (
-          <div className="mb-3">
-            <UploadPanel courseId={courseId} onUploaded={() => setRefreshKey((k) => k + 1)} />
-          </div>
-        )}
         <KnowledgeBase documents={docs} loading={docsLoading} />
       </div>
     </div>

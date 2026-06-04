@@ -283,7 +283,7 @@ const GraphContent = memo(({ data, loading, onNodeClick }: KnowledgeGraphProps) 
 
   return (
     <div className="relative w-full">
-      <div ref={chartRef} style={{ width: '100%', height: 420 }} />
+      <div ref={chartRef} style={{ width: '100%', height: 560 }} />
 
       {/* Bloom 分类图例（右下角） */}
       <div className="absolute bottom-3 right-3 bg-white/85 dark:bg-gray-800/85 backdrop-blur-sm rounded-lg px-3 py-2 text-xs shadow-sm border border-gray-100 dark:border-gray-700">
