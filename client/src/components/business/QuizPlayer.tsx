@@ -74,15 +74,17 @@ const QuizPlayer = memo(({ questions, currentIndex, onAnswer, onNext }: QuizPlay
                       : 'bg-gray-50 border-2 border-transparent dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600'
                   }`}
                 >
-                  <div className="flex items-center gap-3">
-                    <span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                  <div className="flex items-start gap-3">
+                    <span className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
                       isSelected
                         ? 'bg-blue-500 text-white'
                         : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300'
                     }`}>
                       {String.fromCharCode(65 + index)}
                     </span>
-                    <span className="text-gray-700 dark:text-gray-200">{option}</span>
+                    <span className="text-gray-700 dark:text-gray-200 break-words min-w-0 flex-1 leading-6 pt-1">
+                      {option}
+                    </span>
                   </div>
                 </button>
               )
