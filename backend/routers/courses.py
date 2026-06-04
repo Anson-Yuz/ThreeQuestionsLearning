@@ -203,13 +203,17 @@ async def _async_generate_quiz(course_id: str):
             docs = conn.execute(
                 "SELECT id, title, content FROM documents WHERE course_id = ? LIMIT 5",
                 (course_id,)).fetchall()
+            title_row = conn.execute(
+                "SELECT title FROM courses WHERE id = ?", (course_id,)
+            ).fetchone()
         documents = [{"id": d["id"], "title": d["title"], "content": d["content"] or ""} for d in docs]
         if not documents:
             print(f"[quiz-cache] 课程 {course_id} 无资料，跳过生成")
             return
+        course_title = title_row["title"] if title_row else ""
         llm = LLMService()
         qs = QuizService(llm)
-        quizzes = await qs.generate_quiz(course_id, documents, questions_per_level=2)
+        quizzes = await qs.generate_quiz(course_id, documents, course_title=course_title)
         if not quizzes:
             print(f"[quiz-cache] 课程 {course_id} LLM 未能生成题目")
             return

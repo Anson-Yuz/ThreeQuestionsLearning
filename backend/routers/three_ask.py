@@ -31,11 +31,15 @@ async def generate_graph(course_id: str):
             "SELECT id, title, content FROM documents WHERE course_id = ? LIMIT 5",
             (course_id,)
         ).fetchall()
+        title_row = conn.execute(
+            "SELECT title FROM courses WHERE id = ?", (course_id,)
+        ).fetchone()
 
         if not docs:
             return {"nodes": [], "links": []}
 
         documents = [{"id": d["id"], "title": d["title"], "content": d["content"] or ""} for d in docs]
+        course_title = title_row["title"] if title_row else ""
 
     # 调用 AI 服务生成图谱
     try:
@@ -44,7 +48,7 @@ async def generate_graph(course_id: str):
 
         llm = LLMService()
         gs = GraphService(llm)
-        graph_data = await gs.generate_graph(course_id, documents)
+        graph_data = await gs.generate_graph(course_id, documents, course_title=course_title)
     except Exception as e:
         print(f"err: Graph generation failed: {e}")
         graph_data = {"nodes": [], "links": []}
@@ -199,11 +203,15 @@ async def generate_quiz(course_id: str):
             "SELECT id, title, content FROM documents WHERE course_id = ? LIMIT 5",
             (course_id,)
         ).fetchall()
+        title_row = conn.execute(
+            "SELECT title FROM courses WHERE id = ?", (course_id,)
+        ).fetchone()
 
         if not docs:
             return {"quizzes": [], "total": 0, "message": "暂无资料，无法生成测评"}
 
         documents = [{"id": d["id"], "title": d["title"], "content": d["content"] or ""} for d in docs]
+        course_title = title_row["title"] if title_row else ""
 
     # 调用 AI 服务生成测评
     try:
@@ -212,7 +220,7 @@ async def generate_quiz(course_id: str):
 
         llm = LLMService()
         qs = QuizService(llm)
-        quizzes = await qs.generate_quiz(course_id, documents, questions_per_level=1)
+        quizzes = await qs.generate_quiz(course_id, documents, course_title=course_title)
     except Exception as e:
         print(f"err: Quiz generation failed: {e}")
         quizzes = []

@@ -400,7 +400,11 @@ async def _update_graph_and_controversy(course_id: str):
                 "SELECT id, title, content FROM documents WHERE course_id = ?",
                 (course_id,)
             ).fetchall()
+            title_row = conn.execute(
+                "SELECT title FROM courses WHERE id = ?", (course_id,)
+            ).fetchone()
             docs = [{"id": r["id"], "title": r["title"], "content": r["content"] or ""} for r in rows]
+        course_title = title_row["title"] if title_row else ""
 
         print(f"[import] 文档数: {len(docs)}", flush=True)
 
@@ -412,7 +416,7 @@ async def _update_graph_and_controversy(course_id: str):
         llm = LLMService()
         gs = GraphService(llm)
         print(f"[import] 开始生成图谱...", flush=True)
-        graph = await gs.generate_graph(course_id, docs)
+        graph = await gs.generate_graph(course_id, docs, course_title=course_title)
         print(f"[import] 图谱节点数: {len(graph.get('nodes', []))}", flush=True)
 
         # 保存图谱
