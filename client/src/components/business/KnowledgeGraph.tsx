@@ -154,26 +154,28 @@ const GraphContent = memo(({ data, loading, onNodeClick }: KnowledgeGraphProps) 
       backgroundColor: 'transparent',
       tooltip: {
         trigger: 'item',
+        confine: true,
+        extraCssText: 'max-width:240px;white-space:normal;word-break:break-word;overflow-wrap:break-word;',
         formatter: (params: any) => {
           if (params.dataType === 'node') {
             const lvl = params.data.bloomLevel || 'understand'
-            return `
-              <div style="padding:8px;max-width:220px;">
-                <div style="font-weight:600;margin-bottom:4px;">${params.data.name}</div>
-                <div style="font-size:12px;color:#666;margin-bottom:8px;">${params.data.description || ''}</div>
-                <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                  <span style="padding:2px 6px;background:${bloomColors[lvl] || '#6B7280'};color:#fff;border-radius:4px;font-size:11px;">${bloomLabels[lvl] || lvl}</span>
-                  <span style="padding:2px 6px;background:#f3f4f6;border-radius:4px;font-size:11px;">难度: ${(params.data.difficulty ?? 0.5).toFixed(2)}</span>
-                </div>
-              </div>`
+            const desc = (params.data.description || '').slice(0, 80)
+            return [
+              `<div style="font-weight:600;margin-bottom:4px;word-break:break-word;">${params.data.name}</div>`,
+              desc ? `<div style="font-size:12px;color:#666;margin-bottom:6px;line-height:1.4;word-break:break-word;">${desc}</div>` : '',
+              `<div style="display:flex;gap:6px;flex-wrap:wrap;">`,
+              `<span style="padding:2px 6px;background:${bloomColors[lvl] || '#6B7280'};color:#fff;border-radius:4px;font-size:11px;white-space:nowrap;">${bloomLabels[lvl] || lvl}</span>`,
+              `<span style="padding:2px 6px;background:#f3f4f6;border-radius:4px;font-size:11px;white-space:nowrap;">难度 ${(params.data.difficulty ?? 0.5).toFixed(2)}</span>`,
+              `</div>`,
+            ].join('')
           }
           return ''
         },
-        backgroundColor: 'rgba(255,255,255,0.95)',
+        backgroundColor: 'rgba(255,255,255,0.96)',
         borderColor: '#e5e7eb',
         borderWidth: 1,
         borderRadius: 12,
-        padding: 8,
+        padding: 10,
       },
       animationDuration: 500,
       animationEasingUpdate: 'cubicInOut',

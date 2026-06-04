@@ -22,37 +22,79 @@ class GraphService:
             print(f"[graph] 课程 {course_id}: LLM 服务不可用")
             return {"nodes": [], "links": []}
 
-        prompt = f"""基于以下学习资料，生成一个知识图谱，包含核心概念及其关系。
+        prompt = f"""基于以下学习资料，生成一个知识图谱。
 
 学习资料：
 {combined_text[:4000]}
 
-请按布鲁姆认知分类（remember记忆、understand理解、apply应用、analyze分析、evaluate评价、create创造）为每个概念标注 bloom_level。
-每个分类至少要有1-2个节点，确保六种分类都有覆盖。
+【核心要求】
+按布鲁姆认知分类为每个概念标注 bloom_level。必须覆盖全部六种：
+  remember（记忆）   - 基础事实、术语、定义
+  understand（理解） - 概念解释、原理说明
+  apply（应用）      - 实际用法、操作步骤
+  analyze（分析）    - 对比、关系、结构
+  evaluate（评价）   - 优缺点、价值判断
+  create（创造）     - 设计、构建、创新
 
-请生成JSON（不要包含markdown代码块标记）：
+节点分配规则：总共12-20个节点，六种分类各2-3个，不得偏废。
+
+请生成JSON（不要markdown代码块）：
 {{
   "nodes": [
-    {{"id": "c1", "name": "概念名", "description": "简短描述", "bloom_level": "remember", "difficulty": 0.3, "is_threshold_concept": false}}
+    {{"id":"c1","name":"概念名","description":"≤15字描述","bloom_level":"remember","difficulty":0.3,"is_threshold_concept":false}}
   ],
   "links": [
-    {{"source": "c1", "target": "c2", "relation": "prerequisite", "strength": 0.8}}
+    {{"source":"c1","target":"c2","relation":"prerequisite","strength":0.8}}
   ]
 }}
 
-bloom_level 必须是以下六者之一：remember / understand / apply / analyze / evaluate / create
-relation 可选值：prerequisite（前置依赖）、related（相关）、contradicts（矛盾）"""
+bloom_level 必为: remember / understand / apply / analyze / evaluate / create
+relation 可选: prerequisite（前置依赖）、related（相关）、contradicts（矛盾）"""
 
         print(f"[graph] 课程 {course_id}: 开始调用 LLM 生成图谱，资料长度={len(combined_text)}，文档数={len(documents)}")
         result = await self.llm.chat_json(prompt, temperature=0.3, max_tokens=4096)
 
         if result and isinstance(result.get("nodes"), list) and len(result["nodes"]) > 0:
             validated = self._validate_graph(result)
+            validated = self._balance_bloom(validated)
             print(f"[graph] 课程 {course_id}: 图谱节点={len(validated['nodes'])}，链接={len(validated['links'])}")
+            # 打印 bloom 分布
+            from collections import Counter
+            dist = Counter(n.get("bloom_level") for n in validated["nodes"])
+            print(f"[graph] bloom分布: {dict(dist)}")
             return self._calculate_layout(validated)
 
         print(f"[graph] 课程 {course_id}: LLM 未返回有效图谱节点")
         return {"nodes": [], "links": []}
+
+    def _balance_bloom(self, graph: Dict) -> Dict:
+        """确保六种 Bloom 分类都有覆盖。如果 LLM 偏废某些分类，尝试调整。"""
+        all_levels = ["remember", "understand", "apply", "analyze", "evaluate", "create"]
+        nodes = graph.get("nodes", [])
+        if len(nodes) < 6:
+            return graph
+
+        present = {n.get("bloom_level") for n in nodes if n.get("bloom_level") in all_levels}
+        missing = [lvl for lvl in all_levels if lvl not in present]
+        if not missing:
+            return graph
+
+        # 从数量多的分类中借调节点给缺失分类
+        from collections import Counter
+        counts = Counter(n.get("bloom_level") for n in nodes if n.get("bloom_level") in all_levels)
+        print(f"[graph] 缺少 bloom 分类: {missing}，尝试再分配")
+
+        for lvl in missing:
+            # 找数量最多的分类
+            donor_level = counts.most_common(1)[0][0] if counts else None
+            if donor_level and counts[donor_level] > 1:
+                for n in nodes:
+                    if n.get("bloom_level") == donor_level:
+                        n["bloom_level"] = lvl
+                        counts[donor_level] -= 1
+                        break
+
+        return graph
 
     def _validate_graph(self, graph: Dict) -> Dict:
         """校验并清洗图谱数据：去重、过滤无效边、补全缺失字段"""
