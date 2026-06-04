@@ -11,16 +11,14 @@ router = APIRouter()
 
 @router.get("/{course_id}/questions")
 async def get_questions(course_id: str):
-    """获取测评题目列表"""
+    """获取测评题目列表 — 基于真实生成的题目，无记录时返回空"""
     with get_db() as conn:
-        # 检查是否有已生成的题目
         rows = conn.execute(
             "SELECT * FROM quiz_records WHERE course_id = ? GROUP BY question_id",
             (course_id,)
         ).fetchall()
 
         if rows:
-            # 返回已有的题目记录
             questions = []
             for row in rows:
                 questions.append({
@@ -31,60 +29,17 @@ async def get_questions(course_id: str):
                 })
             return {"questions": questions}
 
-        # 如果没有题目，生成示例题目
-        questions = generate_sample_questions(course_id)
-        return {"questions": questions}
-
-def generate_sample_questions(course_id: str) -> List[dict]:
-    """生成示例题目"""
-    dimensions = ["记忆", "理解", "应用", "分析", "评价", "创造"]
-    questions = []
-
-    for i, dim in enumerate(dimensions):
-        question = {
-            "id": f"{course_id}_{dim}",
-            "courseId": course_id,
-            "bloomLevel": dim,
-            "type": "single",
-            "difficulty": i + 1,
-            "content": f"这是{dim}层级的示例题目。请基于学习内容回答。",
-            "options": ["选项A", "选项B", "选项C", "选项D"],
-            "correctAnswer": "A",
-            "explanation": f"这是{dim}层级的答案解析。",
-            "知识点": ["示例知识点"],
-            "userAnswer": None,
-            "isCorrect": None,
-            "isMarked": False
-        }
-        questions.append(question)
-
-    return questions
+        # 无题目记录，返回空（前端需先调用 /three-ask/quiz/generate 生成题目）
+        return {"questions": [], "message": "暂无题目，请先生成测评"}
 
 @router.get("/{course_id}/list")
 async def list_questions(course_id: str):
     """按认知层级分组获取题目列表"""
-    questions = generate_sample_questions(course_id)
-
-    # 按维度分组
-    grouped = {}
-    for q in questions:
-        dim = q["bloomLevel"]
-        if dim not in grouped:
-            grouped[dim] = []
-        grouped[dim].append(q)
-
-    return {
-        "grouped_questions": grouped,
-        "total": len(questions)
-    }
+    return {"grouped_questions": {}, "total": 0, "message": "请通过 /three-ask/quiz/generate 生成题目"}
 
 @router.post("/submit")
 async def submit_answer(req: QuizSubmit):
     """提交单题答案"""
-
-    # 评估答案（简化版）
-    is_correct = req.user_answer.upper() == "A"
-    score = 100 if is_correct else 0
 
     # 保存记录
     now = int(datetime.now().timestamp() * 1000)
@@ -94,15 +49,14 @@ async def submit_answer(req: QuizSubmit):
             (id, course_id, question_id, user_answer, is_correct, score, dimension, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (f"{req.course_id}_{req.question_id}", req.course_id,
-              req.question_id, req.user_answer, 1 if is_correct else 0,
-              score, "", now))
+              req.question_id, req.user_answer, 0,
+              0, "", now))
         conn.commit()
 
     return {
-        "is_correct": is_correct,
-        "score": score,
-        "explanation": "这是答案解析示例。正确答案是A。",
-        "feedback": "回答正确！" if is_correct else "回答错误，正确答案是A。"
+        "is_correct": False,
+        "score": 0,
+        "feedback": "答案已保存"
     }
 
 @router.post("/{course_id}/complete")
@@ -199,8 +153,8 @@ async def get_report(course_id: str):
             mistakes.append({
                 "question": row["question_id"],
                 "user_answer": row["user_answer"],
-                "correct_answer": "A",
-                "explanation": "示例解析"
+                "correct_answer": "",
+                "explanation": ""
             })
 
         ability_scores = {

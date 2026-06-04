@@ -4,7 +4,6 @@ from typing import List, Dict, Optional
 class QuizService:
     """测评题目生成与评估"""
 
-    # Bloom 认知层级难度系数
     DIFFICULTIES = {
         "remember": 0.2,
         "understand": 0.4,
@@ -14,7 +13,6 @@ class QuizService:
         "create": 0.95
     }
 
-    # 各维度题型
     QUESTION_TYPES = {
         "remember": ["multiple_choice", "fill_blank"],
         "understand": ["short_answer", "explanation"],
@@ -45,8 +43,7 @@ class QuizService:
         if not self.llm or not context.strip():
             return None
 
-        prompt = f"""
-基于以下学习资料，为"{dimension}"认知层级生成第{question_num}道测评题目。
+        prompt = f"""基于以下学习资料，为"{dimension}"认知层级生成第{question_num}道测评题目。
 
 要求：
 - 难度系数: {difficulty}
@@ -55,7 +52,7 @@ class QuizService:
 学习资料：
 {context[:4000]}
 
-请生成包含以下字段的JSON：
+请生成包含以下字段的JSON（不要包含markdown代码块标记）：
 {{
   "id": "question_{dimension}_{question_num}",
   "dimension": "{dimension}",
@@ -67,15 +64,13 @@ class QuizService:
   "correct_answer": "A",
   "explanation": "答案解析",
   "knowledge_points": ["知识点1", "知识点2"]
-}}
-"""
-        try:
-            result = await self.llm.chat(prompt)
-            parsed = json.loads(result)
-            return parsed if parsed.get("question") else None
-        except Exception as e:
-            print(f"err: Quiz generation failed for {dimension}: {e}")
-            return None
+}}"""
+
+        result = await self.llm.chat_json(prompt, temperature=0.3, max_tokens=2048)
+        if result and result.get("question"):
+            return result
+        print(f"err: Quiz generation failed for {dimension} #{question_num}")
+        return None
 
     async def evaluate_answer(self, question: Dict, user_answer: str) -> Dict:
         """评估答案"""
@@ -90,28 +85,25 @@ class QuizService:
                 "feedback": "回答正确！" if is_correct else f"正确答案：{correct}"
             }
         else:
-            # 主观题使用 LLM 评估
             if self.llm:
                 return await self._llm_evaluate(question, user_answer)
             return {"is_correct": False, "score": 0, "feedback": "评分失败"}
 
     async def _llm_evaluate(self, question: Dict, user_answer: str) -> Dict:
         """LLM 评估主观题"""
-        prompt = f"""
-评估以下回答：
+        prompt = f"""评估以下回答：
 
 题目：{question['question']}
 正确答案：{question.get('correct_answer', '无标准答案')}
 用户回答：{user_answer}
 
 请评估并输出JSON：
-{{"score": 85, "is_correct": true, "feedback": "评估反馈"}}
-"""
-        try:
-            result = await self.llm.chat(prompt)
-            return json.loads(result)
-        except:
-            return {"is_correct": False, "score": 0, "feedback": "评分异常"}
+{{"score": 85, "is_correct": true, "feedback": "评估反馈"}}"""
+
+        result = await self.llm.chat_json(prompt, temperature=0.3, max_tokens=1024)
+        if result:
+            return result
+        return {"is_correct": False, "score": 0, "feedback": "评分异常"}
 
     def calculate_ability_scores(self, quiz_results: List[Dict]) -> Dict:
         """计算能力维度得分"""

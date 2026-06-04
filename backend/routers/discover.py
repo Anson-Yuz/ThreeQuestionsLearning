@@ -117,16 +117,10 @@ async def _rank_results(query: str, items: list) -> list:
     try:
         from services.llm_service import LLMService
         llm = LLMService()
-        llm.api_key = "fc-b94c7744b5224b9b936478131d275d7b"
-        raw = await llm.chat(prompt, temperature=0.3, max_tokens=2048)
-        # 提取 JSON
-        raw = raw.strip()
-        if raw.startswith("```"):
-            raw = re.sub(r'^```\w*', '', raw)
-            raw = re.sub(r'```$', '', raw)
-        scores = json.loads(raw)
+        scores = await llm.chat_json(prompt, temperature=0.3, max_tokens=2048)
+        if not isinstance(scores, list):
+            raise ValueError("LLM returned non-array result")
     except Exception:
-        # LLM 失败则按原始顺序
         return [dict(it, score=5) for it in items]
 
     # 合并分数，取 top 10
@@ -396,7 +390,6 @@ async def _update_graph_and_controversy(course_id: str):
 
         # 1. 重新生成知识图谱
         llm = LLMService()
-        llm.api_key = "fc-b94c7744b5224b9b936478131d275d7b"
         gs = GraphService(llm)
         graph = await gs.generate_graph(course_id, docs)
 

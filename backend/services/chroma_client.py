@@ -130,13 +130,6 @@ class ChromaClient:
         return False
 
     def _mock_search_results(self, top_k: int) -> List[Dict]:
-        """模拟搜索结果"""
-        return [
-            {
-                "id": f"mock_doc_{i}",
-                "content": f"这是模拟检索结果的示例内容（第{i+1}条）",
-                "score": 1.0 - (i * 0.1),
-                "metadata": {"source": "mock", "title": f"模拟文档{i+1}"}
-            }
-            for i in range(min(top_k, 3))
-        ]
+        """ChromaDB 不可用时返回空结果"""
+        print("⚠️ ChromaDB 不可用，返回空检索结果")
+        return []

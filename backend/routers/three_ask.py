@@ -6,42 +6,44 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks
 from typing import List, Optional
 
 from database import get_db
-from models import KnowledgeGraph, Controversy, QuizQuestion, QuizSubmit, SuccessResponse
+from models import QuizSubmit, SuccessResponse
 
 router = APIRouter()
 
 @router.post("/graph/generate/{course_id}")
 async def generate_graph(course_id: str):
-    """第一问：生成知识图谱"""
+    """第一问：生成知识图谱 — 基于真实资料，无资料或LLM失败时返回空图谱"""
 
     with get_db() as conn:
-        # 获取课程资料
         docs = conn.execute(
-            "SELECT content, title FROM documents WHERE course_id = ? LIMIT 5",
+            "SELECT id, title, content FROM documents WHERE course_id = ? LIMIT 5",
             (course_id,)
         ).fetchall()
 
         if not docs:
-            return KnowledgeGraph(nodes=[], links=[])
+            return {"nodes": [], "links": []}
 
-    # TODO: 调用 AI 服务生成图谱
-    # 临时返回示例数据
-    graph_data = {
-        "nodes": [
-            {"id": "node1", "name": "核心概念", "description": "这是核心概念", "bloom_level": "understand", "difficulty": 0.5, "is_threshold_concept": True},
-            {"id": "node2", "name": "相关概念", "description": "这是相关概念", "bloom_level": "remember", "difficulty": 0.3, "is_threshold_concept": False}
-        ],
-        "links": [
-            {"source": "node1", "target": "node2", "relation": "related", "strength": 0.8}
-        ]
-    }
+        documents = [{"id": d["id"], "title": d["title"], "content": d["content"] or ""} for d in docs]
+
+    # 调用 AI 服务生成图谱
+    try:
+        from services.llm_service import LLMService
+        from services.graph_service import GraphService
+
+        llm = LLMService()
+        gs = GraphService(llm)
+        graph_data = await gs.generate_graph(course_id, documents)
+    except Exception as e:
+        print(f"err: Graph generation failed: {e}")
+        graph_data = {"nodes": [], "links": []}
 
     # 缓存图谱数据
+    now = int(datetime.now().timestamp() * 1000)
     with get_db() as conn:
         conn.execute("""
             INSERT OR REPLACE INTO knowledge_graphs (course_id, graph_data, updated_at)
             VALUES (?, ?, ?)
-        """, (course_id, json.dumps(graph_data), int(datetime.now().timestamp() * 1000)))
+        """, (course_id, json.dumps(graph_data, ensure_ascii=False), now))
         conn.commit()
 
     return graph_data
@@ -83,7 +85,6 @@ async def controversy_detection_background(course_id: str):
     try:
         from services.llm_service import LLMService
 
-        # 获取所有文档内容
         with get_db() as conn:
             docs = conn.execute(
                 "SELECT id, title, content FROM documents WHERE course_id = ?",
@@ -97,7 +98,6 @@ async def controversy_detection_background(course_id: str):
         combined = "\n\n".join([d["content"][:2000] for d in docs if d["content"]])
 
         llm = LLMService()
-        llm.api_key = "fc-b94c7744b5224b9b936478131d275d7b"
         prompt = f"""基于以下学习资料，分析其中存在的学术争议点或不同观点。
 
 学习资料：
@@ -115,13 +115,7 @@ async def controversy_detection_background(course_id: str):
   }}
 ]"""
 
-        raw = await llm.chat(prompt, temperature=0.3, max_tokens=2048)
-        raw = raw.strip()
-        if raw.startswith("```"):
-            import re
-            raw = re.sub(r'^```\w*', '', raw)
-            raw = re.sub(r'```$', '', raw)
-        parsed = json.loads(raw)
+        parsed = await llm.chat_json(prompt, temperature=0.3, max_tokens=2048)
         if isinstance(parsed, list):
             for item in parsed:
                 if item.get("topic"):
@@ -134,6 +128,8 @@ async def controversy_detection_background(course_id: str):
                         "con_evidence": item.get("con_evidence", ""),
                         "confidence": float(item.get("confidence", 0.7))
                     })
+        else:
+            print(f"  争议分析: LLM 返回非数组结果")
     except Exception as e:
         print(f"err: Controversy detection failed: {e}")
         controversies = []
@@ -188,35 +184,32 @@ async def get_controversies(course_id: str):
 
 @router.post("/quiz/generate/{course_id}")
 async def generate_quiz(course_id: str):
-    """第三问：生成测评题目"""
+    """第三问：生成测评题目 — 基于真实资料，无资料或LLM失败时返回空列表"""
 
     with get_db() as conn:
-        # 获取课程资料
         docs = conn.execute(
-            "SELECT content, title FROM documents WHERE course_id = ? LIMIT 5",
+            "SELECT id, title, content FROM documents WHERE course_id = ? LIMIT 5",
             (course_id,)
         ).fetchall()
 
         if not docs:
-            return {"quizzes": [], "message": "暂无资料，无法生成测评"}
+            return {"quizzes": [], "total": 0, "message": "暂无资料，无法生成测评"}
 
-    # TODO: 调用 AI 服务生成测评
-    quizzes = [
-        {
-            "id": f"quiz_{course_id}_1",
-            "dimension": "记忆",
-            "bloom_level": "remember",
-            "difficulty": 0.2,
-            "question_type": "single",
-            "question": "这是示例题目，请基于课程内容回答。",
-            "options": ["选项A", "选项B", "选项C", "选项D"],
-            "correct_answer": "A",
-            "explanation": "这是答案解析",
-            "knowledge_points": ["知识点1"]
-        }
-    ]
+        documents = [{"id": d["id"], "title": d["title"], "content": d["content"] or ""} for d in docs]
 
-    return {"quizzes": quizzes, "total": len(quizzes)}
+    # 调用 AI 服务生成测评
+    try:
+        from services.llm_service import LLMService
+        from services.quiz_service import QuizService
+
+        llm = LLMService()
+        qs = QuizService(llm)
+        quizzes = await qs.generate_quiz(course_id, documents, questions_per_level=1)
+    except Exception as e:
+        print(f"err: Quiz generation failed: {e}")
+        quizzes = []
+
+    return {"quizzes": quizzes, "total": len(quizzes), "message": "生成完成" if quizzes else "未能生成题目，请稍后重试"}
 
 @router.post("/quiz/submit")
 async def submit_quiz(req: QuizSubmit):
