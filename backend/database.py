@@ -241,6 +241,16 @@ def init_db():
         except Exception as e:
             print(f"⚠️ FTS5 不可用（{e}），将回退到 LIKE 搜索")
 
+        # 课程测评缓存表
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS course_quizzes (
+                course_id TEXT PRIMARY KEY,
+                quizzes_json TEXT NOT NULL,
+                updated_at INTEGER,
+                FOREIGN KEY (course_id) REFERENCES courses(id)
+            )
+        """)
+
         conn.commit()
         print("✅ 数据库初始化完成")
 

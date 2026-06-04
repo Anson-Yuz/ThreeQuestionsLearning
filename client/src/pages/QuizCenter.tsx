@@ -6,6 +6,7 @@ import RadarChart from '../components/business/RadarChart'
 import EmptyState from '../components/ui/EmptyState'
 import { CheckCircleIcon, ArrowRightIcon } from '../components/ui/Icons'
 import { threeAskApi } from '../api/threeAsk'
+import { coursesApi } from '../api/courses'
 
 interface QuizItem {
   id: string
@@ -35,25 +36,49 @@ const QuizCenter = () => {
     if (!courseId) return
     setLoading(true)
     setErrorMsg('')
-    const timeout = setTimeout(() => {
+
+    const pollTimer = { current: null as ReturnType<typeof setInterval> | null }
+    const overallTimer = setTimeout(() => {
+      if (pollTimer.current) clearInterval(pollTimer.current)
       setLoading(false)
       setErrorMsg('生成超时，请点击重试')
     }, 60000)
-    threeAskApi.generateQuiz(courseId)
-      .then((res) => {
-        clearTimeout(timeout)
-        setQuestions((res.quizzes || []) as unknown as QuizItem[])
-      })
-      .catch((e) => {
-        clearTimeout(timeout)
-        setErrorMsg(e?.message || '生成失败')
-        setQuestions([])
-      })
-      .finally(() => {
-        clearTimeout(timeout)
-        setLoading(false)
-      })
+
+    const fetchFromCache = (isRetry = false) => {
+      coursesApi.getCachedQuizzes(courseId)
+        .then((cached) => {
+          if (cached.status === 'ready' && cached.data?.length) {
+            clearTimeout(overallTimer)
+            if (pollTimer.current) clearInterval(pollTimer.current)
+            setQuestions(cached.data as unknown as QuizItem[])
+            setLoading(false)
+            return
+          }
+          if (cached.status === 'generating' && !isRetry) {
+            // 后台正在生成，每 3s 轮询一次
+            pollTimer.current = setInterval(() => fetchFromCache(true), 3000)
+          } else {
+            // 仍是 generating 但超过了首次轮询还没好，保持 loading 等下个轮询
+          }
+        })
+        .catch(() => {
+          // 缓存接口失败，降级到同步生成
+          clearTimeout(overallTimer)
+          if (pollTimer.current) clearInterval(pollTimer.current)
+          threeAskApi.generateQuiz(courseId)
+            .then((res) => setQuestions((res.quizzes || []) as unknown as QuizItem[]))
+            .catch((e) => setErrorMsg(e?.message || '生成失败'))
+            .finally(() => setLoading(false))
+        })
+    }
+    fetchFromCache()
   }, [courseId])
+
+  useEffect(() => {
+    return () => {
+      // 组件卸载时无需特殊清理，pollTimer 闭包随 setLoading(false) 自然结束
+    }
+  }, [])
 
   useEffect(() => {
     loadQuiz()

@@ -37,7 +37,6 @@ const LearningSpace = () => {
   const [controversies, setControversies] = useState<any[]>([])
   const [controLoading, setControLoading] = useState(false)
   const [controError, setControError] = useState('')
-  const [progress, setProgress] = useState(0)
   const [discoverCount, setDiscoverCount] = useState(0)
   const [discoverResults, setDiscoverResults] = useState<DiscoverResult[]>([])
   const [showDiscoverPanel, setShowDiscoverPanel] = useState(false)
@@ -57,10 +56,6 @@ const LearningSpace = () => {
     coursesApi.get(courseId)
       .then((c) => { setCourse(c); setInitialLoading(false) })
       .catch((e) => { setPageError(friendlyMsg(e)); setInitialLoading(false) })
-
-    threeAskApi.getProgress(courseId)
-      .then((p) => setProgress(p.overallProgress))
-      .catch(() => {})
   }, [courseId])
 
   const handleRefreshGraph = useCallback(async () => {
@@ -268,19 +263,6 @@ const LearningSpace = () => {
         showBack
         onLeftClick={handleBack}
       />
-
-      {/* 进度条 */}
-      <div className="bg-white dark:bg-gray-900 px-4 py-3">
-        <div className="flex items-center gap-3">
-          <div className="flex-1 h-2 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-          <span className="text-sm text-gray-500">{progress}%</span>
-        </div>
-      </div>
 
       {/* Tab 切换 */}
       <div className="bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800">

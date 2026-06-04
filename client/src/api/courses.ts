@@ -85,6 +85,14 @@ export const coursesApi = {
     return apiClient.get(`/courses/${courseId}/graph`);
   },
 
+  // 读取测评题库缓存（命中即返回，未命中触发后台生成并返回 generating）
+  getCachedQuizzes: (courseId: string): Promise<{
+    status: 'ready' | 'generating'
+    data: any[]
+  }> => {
+    return apiClient.get(`/courses/${courseId}/quizzes`);
+  },
+
   // 获取单个课程详情
   get: (courseId: string): Promise<Course> => {
     return apiClient.get(`/courses/${courseId}`);

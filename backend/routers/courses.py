@@ -205,6 +205,64 @@ async def get_cached_graph(course_id: str):
     return {"status": "generating", "data": {"nodes": [], "links": []}}
 
 
+@router.get("/{course_id}/quizzes")
+async def get_cached_quizzes(course_id: str):
+    """
+    课程测评缓存接口 — 优先返回 SQLite 缓存
+    命中：< 50ms 返回题库
+    未命中：触发后台线程生成（每维度 2 道，共 ~12 道），返回 {status: 'generating'}
+    """
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT quizzes_json FROM course_quizzes WHERE course_id = ?",
+            (course_id,)
+        ).fetchone()
+
+    if row and row["quizzes_json"]:
+        try:
+            quizzes = json.loads(row["quizzes_json"])
+            if isinstance(quizzes, list) and len(quizzes) > 0:
+                return {"status": "ready", "data": quizzes}
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    # 未命中，触发后台生成
+    def _bg():
+        try:
+            from services.llm_service import LLMService
+            from services.quiz_service import QuizService
+            with get_db() as conn:
+                docs = conn.execute(
+                    "SELECT id, title, content FROM documents WHERE course_id = ? LIMIT 5",
+                    (course_id,)
+                ).fetchall()
+            documents = [{"id": d["id"], "title": d["title"], "content": d["content"] or ""} for d in docs]
+            if not documents:
+                print(f"[quiz-cache] 课程 {course_id} 无资料，跳过生成")
+                return
+            llm = LLMService()
+            qs = QuizService(llm)
+            quizzes = asyncio.run(qs.generate_quiz(course_id, documents, questions_per_level=2))
+            if not quizzes:
+                print(f"[quiz-cache] 课程 {course_id} LLM 未能生成题目")
+                return
+            now = int(datetime.now().timestamp() * 1000)
+            with get_db() as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO course_quizzes (course_id, quizzes_json, updated_at) VALUES (?, ?, ?)",
+                    (course_id, json.dumps(quizzes, ensure_ascii=False), now)
+                )
+                conn.commit()
+            from routers.sse import push_event
+            push_event(course_id, "quiz_ready", {"quizzes": quizzes, "count": len(quizzes)})
+            print(f"[quiz-cache] 课程 {course_id} 生成 {len(quizzes)} 道题已缓存")
+        except Exception as e:
+            print(f"[quiz-cache] 后台生成失败 {course_id}: {e}")
+
+    threading.Thread(target=_bg, daemon=True).start()
+    return {"status": "generating", "data": []}
+
+
 @router.get("/search")
 async def search_courses(
     q: str = Query(..., min_length=1, description="搜索关键词"),
