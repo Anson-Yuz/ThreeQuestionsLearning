@@ -157,6 +157,8 @@ const LearningSpace = () => {
       es.addEventListener('graph_updated', (e: MessageEvent) => {
         try {
           const data = JSON.parse(e.data)
+          console.log('🔍 SSE graph_updated 原始数据:', data)
+          console.log('🔍 第一个节点:', data.nodes?.[0])
           if (data.nodes && mountedRef.current) {
             setGraphData(data)
             setGraphLoading(false)
@@ -224,6 +226,30 @@ const LearningSpace = () => {
       setRefreshKey((k) => k + 1)
     } catch {
       alert('导入失败')
+    }
+  }, [courseId])
+
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState(false)
+
+  const handleUploadClick = useCallback(() => {
+    fileInputRef.current?.click()
+  }, [])
+
+  const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0 || !courseId) return
+    setUploading(true)
+    try {
+      for (const file of files) {
+        await knowledgeApi.upload(courseId, file)
+      }
+      setRefreshKey((k) => k + 1)
+    } catch {
+      alert('上传失败')
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
     }
   }, [courseId])
 
@@ -361,8 +387,20 @@ const LearningSpace = () => {
         <div className="flex items-center justify-between mb-3">
           <span className="text-sm font-semibold text-gray-900 dark:text-white">复合知识库</span>
           <div className="flex items-center gap-2">
-            <button className="px-3 py-1.5 text-xs text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg">
-              上传资料
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept=".pdf,.doc,.docx,.md,.txt"
+              onChange={handleFileChange}
+              className="hidden"
+            />
+            <button
+              onClick={handleUploadClick}
+              disabled={uploading}
+              className="px-3 py-1.5 text-xs text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg disabled:opacity-40"
+            >
+              {uploading ? '上传中…' : '上传资料'}
             </button>
           </div>
         </div>

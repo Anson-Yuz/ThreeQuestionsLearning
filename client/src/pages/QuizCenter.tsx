@@ -29,15 +29,35 @@ const QuizCenter = () => {
   const [submitted, setSubmitted] = useState(false)
   const [results, setResults] = useState<any>(null)
   const [submittingAll, setSubmittingAll] = useState(false)
+  const [errorMsg, setErrorMsg] = useState('')
 
-  useEffect(() => {
+  const loadQuiz = useCallback(() => {
     if (!courseId) return
     setLoading(true)
+    setErrorMsg('')
+    const timeout = setTimeout(() => {
+      setLoading(false)
+      setErrorMsg('生成超时，请点击重试')
+    }, 60000)
     threeAskApi.generateQuiz(courseId)
-      .then((res) => setQuestions(res.quizzes as unknown as QuizItem[]))
-      .catch(() => setQuestions([]))
-      .finally(() => setLoading(false))
+      .then((res) => {
+        clearTimeout(timeout)
+        setQuestions((res.quizzes || []) as unknown as QuizItem[])
+      })
+      .catch((e) => {
+        clearTimeout(timeout)
+        setErrorMsg(e?.message || '生成失败')
+        setQuestions([])
+      })
+      .finally(() => {
+        clearTimeout(timeout)
+        setLoading(false)
+      })
   }, [courseId])
+
+  useEffect(() => {
+    loadQuiz()
+  }, [loadQuiz])
 
   const handleBack = () => navigate(`/learning/${courseId}`)
 
@@ -108,7 +128,12 @@ const QuizCenter = () => {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-black flex flex-col">
         <NavBar title="测评中心" showBack onLeftClick={handleBack} />
-        <EmptyState title="暂无测评" description="先学习相关课程，测评将自动生成" />
+        <EmptyState
+          title={errorMsg || "暂无测评"}
+          description={errorMsg ? "请检查网络或稍后重试" : "先学习相关课程，测评将自动生成"}
+          action="重试"
+          onAction={loadQuiz}
+        />
       </div>
     )
   }
