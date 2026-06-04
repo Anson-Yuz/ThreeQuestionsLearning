@@ -207,3 +207,22 @@ export const ClockIcon = memo(({ className = 'w-5 h-5' }: IconProps) => (
     <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
   </svg>
 ))
+export const PencilIcon = memo(({ className = 'w-5 h-5' }: IconProps) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+  </svg>
+))
+
+export const MoreHorizontalIcon = memo(({ className = 'w-5 h-5' }: IconProps) => (
+  <svg className={className} fill="currentColor" viewBox="0 0 24 24" stroke="none">
+    <circle cx="6" cy="12" r="1.5" />
+    <circle cx="12" cy="12" r="1.5" />
+    <circle cx="18" cy="12" r="1.5" />
+  </svg>
+))
+
+export const SaveIcon = memo(({ className = 'w-5 h-5' }: IconProps) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2 2H7a2 2 0 01-2-2V8m3 5h6m-6 0v3m6-3v3m-3-3h6M5 5h14l1 1v2M5 5v14a2 2 0 002 2h10a2 2 0 002-2V8" />
+  </svg>
+))

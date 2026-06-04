@@ -127,3 +127,12 @@ body {
 }
 
 /* Tailwind dark: utility classes support */
+/* 缩放进入（菜单弹出等） */
+@keyframes scale-in {
+  from { transform: scale(0.9); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+.animate-scale-in { animation: scale-in 0.15s ease-out; }
+
+/* 卡片阴影（菜单） */
+.shadow-card-hover { box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12); }

@@ -1,6 +1,6 @@
-import { memo, useMemo } from 'react'
+import { memo, useMemo, useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { BookIcon, ChevronRightIcon } from '../ui/Icons'
+import { BookIcon, ChevronRightIcon, MoreHorizontalIcon, PencilIcon, SaveIcon, TrashIcon } from '../ui/Icons'
 
 interface CourseCardProps {
   id: string
@@ -15,6 +15,9 @@ interface CourseCardProps {
   }
   lastAccessedAt: number
   onLongPress?: () => void
+  onSave?: (courseId: string) => void
+  onRename?: (courseId: string, newName: string) => void
+  onDelete?: (courseId: string) => void
 }
 
 export const CourseCard = memo(({
@@ -26,8 +29,14 @@ export const CourseCard = memo(({
   threeAskProgress = { question1: false, question2: false, question3: false },
   lastAccessedAt = 0,
   onLongPress,
+  onSave,
+  onRename,
+  onDelete,
 }: CourseCardProps) => {
   const navigate = useNavigate()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
 
   // 相对时间显示
   const relativeTime = useMemo(() => {
@@ -48,14 +57,60 @@ export const CourseCard = memo(({
   const isArchived = status === 'archived'
   const opacity = isCompleted ? 'opacity-60' : isArchived ? 'opacity-40' : ''
 
-  const handleClick = () => {
+  // 点击外部关闭菜单
+  useEffect(() => {
+    if (!menuOpen) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        menuRef.current && !menuRef.current.contains(e.target as Node) &&
+        buttonRef.current && !buttonRef.current.contains(e.target as Node)
+      ) {
+        setMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [menuOpen])
+
+  const handleCardClick = (e: React.MouseEvent) => {
+    // 点击菜单按钮时不跳转
+    if ((e.target as HTMLElement).closest('[data-card-menu]')) return
     navigate(`/learning/${id}`)
+  }
+
+  const handleMenuToggle = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setMenuOpen((v) => !v)
+  }
+
+  const handleSave = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setMenuOpen(false)
+    onSave?.(id)
+  }
+
+  const handleRename = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setMenuOpen(false)
+    const newName = window.prompt('重命名课程', title)
+    if (newName && newName.trim() && newName !== title) {
+      onRename?.(id, newName.trim())
+    }
+  }
+
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setMenuOpen(false)
+    if (window.confirm('确定删除此课程？')) {
+      onDelete?.(id)
+    }
   }
 
   return (
     <div
-      onClick={handleClick}
-      className={`bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm active:bg-gray-50 ${opacity} transition-all`}
+      onClick={handleCardClick}
+      onContextMenu={(e) => e.preventDefault()}
+      className={`relative bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm active:bg-gray-50 ${opacity} transition-all`}
     >
       <div className="flex items-start gap-3">
         {/* 书籍图标 */}
@@ -87,13 +142,54 @@ export const CourseCard = memo(({
           {/* 底部信息 */}
           <div className="flex items-center justify-between mt-3 text-xs text-gray-400">
             <span>{relativeTime}</span>
-            <div className="flex items-center gap-2">
-              <span className={`w-1.5 h-1.5 rounded-full ${threeAskProgress.question1 ? 'bg-green-500' : 'bg-gray-300'}`} />
-              <span className={`w-1.5 h-1.5 rounded-full ${threeAskProgress.question2 ? 'bg-green-500' : 'bg-gray-300'}`} />
-              <span className={`w-1.5 h-1.5 rounded-full ${threeAskProgress.question3 ? 'bg-green-500' : 'bg-gray-300'}`} />
-            </div>
           </div>
         </div>
+      </div>
+
+      {/* 右下角三个点按钮 + 弹出菜单 */}
+      <div data-card-menu className="absolute bottom-2 right-2">
+        <button
+          ref={buttonRef}
+          onClick={handleMenuToggle}
+          className="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+          aria-label="操作菜单"
+        >
+          <MoreHorizontalIcon className="w-5 h-5 text-gray-400" />
+        </button>
+
+        {menuOpen && (
+          <div
+            ref={menuRef}
+            data-card-menu
+            className="absolute bottom-full right-0 mb-1 flex flex-col w-36 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-100 dark:border-gray-700 z-50 animate-scale-in origin-bottom-right"
+          >
+            <button
+              onClick={handleSave}
+              data-card-menu
+              className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors rounded-t-xl"
+            >
+              <SaveIcon className="w-4 h-4" />
+              保存
+            </button>
+            <button
+              onClick={handleRename}
+              data-card-menu
+              className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            >
+              <PencilIcon className="w-4 h-4" />
+              重命名
+            </button>
+            <div className="border-t border-gray-100 dark:border-gray-700 mx-2" />
+            <button
+              onClick={handleDelete}
+              data-card-menu
+              className="flex items-center gap-2 px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors rounded-b-xl"
+            >
+              <TrashIcon className="w-4 h-4" />
+              删除
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

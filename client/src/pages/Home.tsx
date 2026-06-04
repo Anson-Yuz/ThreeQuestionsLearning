@@ -106,11 +106,6 @@ const Home = () => {
     }
   }, [searchValue, fetchCourses, navigate])
 
-  const handleLongPress = useCallback((courseId: string) => {
-    setSelectedCourseId(courseId)
-    setShowMenu(true)
-  }, [])
-
   const activeCourses = courses.filter((c) => c.status === 'active' || c.status === 'completed')
   const completedCount = courses.filter((c) => c.status === 'completed').length
 
@@ -246,13 +241,7 @@ const Home = () => {
 
         <div className="space-y-3">
           {activeCourses.map((course) => (
-            <div
-              key={course.id}
-              onContextMenu={(e) => {
-                e.preventDefault()
-                handleLongPress(course.id)
-              }}
-            >
+            <div key={course.id}>
               <CourseCard
                 id={course.id}
                 title={course.title}
@@ -261,7 +250,6 @@ const Home = () => {
                 status={course.status}
                 threeAskProgress={course.threeAskProgress}
                 lastAccessedAt={course.lastAccessed}
-                onLongPress={() => handleLongPress(course.id)}
               />
             </div>
           ))}
