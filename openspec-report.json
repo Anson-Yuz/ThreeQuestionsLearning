@@ -1,11 +1,11 @@
 {
-  "timestamp": "2026-06-03 20:32:05",
-  "status": "PASSED",
+  "timestamp": "2026-06-04 11:51:42",
+  "status": "FAILED",
   "summary": {
-    "passed": 39,
+    "passed": 38,
     "warnings": 4,
-    "failed": 0,
-    "total": 43
+    "failed": 2,
+    "total": 44
   },
-  "completion_rate": "100%"
+  "completion_rate": "95%"
 }

@@ -1,14 +1,26 @@
 import json
 import uuid
+import asyncio
+import threading
 from datetime import datetime
-# 端点: /api/three-ask/graph/generate/{course_id} /api/three-ask/graph/update/{course_id} /api/three-ask/controversy/detect/{course_id} /api/three-ask/controversy/{course_id} /api/three-ask/quiz/generate/{course_id} /api/three-ask/quiz/submit /api/three-ask/quiz/{course_id}/complete /api/three-ask/progress/{course_id}
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException
 from typing import List, Optional
 
 from database import get_db
 from models import QuizSubmit, SuccessResponse
 
 router = APIRouter()
+
+def _run_async_bg(coro):
+    """在后台线程中运行异步协程"""
+    def _runner():
+        try:
+            asyncio.run(coro)
+        except Exception as e:
+            print(f"[bg] 后台任务异常: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+    threading.Thread(target=_runner, daemon=True).start()
 
 @router.post("/graph/generate/{course_id}")
 async def generate_graph(course_id: str):
@@ -55,14 +67,10 @@ async def update_graph_incremental(course_id: str, doc_id: str):
     return await generate_graph(course_id)
 
 @router.post("/controversy/detect/{course_id}")
-async def detect_controversy(
-    course_id: str,
-    background_tasks: BackgroundTasks
-):
+async def detect_controversy(course_id: str):
     """第二问：异步检测学术分歧"""
 
     with get_db() as conn:
-        # 检查资料数量
         doc_count = conn.execute(
             "SELECT COUNT(*) FROM documents WHERE course_id = ?",
             (course_id,)
@@ -71,8 +79,8 @@ async def detect_controversy(
         if doc_count < 2:
             return {"status": "skipped", "message": "需要至少2份资料才能进行争议分析"}
 
-    # 异步处理
-    background_tasks.add_task(controversy_detection_background, course_id)
+    # 在后台线程中运行，确保不受 FastAPI 事件循环影响
+    _run_async_bg(controversy_detection_background(course_id))
 
     return {"status": "processing", "message": "争议分析已开始"}
 

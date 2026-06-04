@@ -2,13 +2,14 @@ import uuid
 import json
 import asyncio
 import re
+import threading
 from datetime import datetime
 from urllib.parse import urlparse, quote
 from typing import List, Optional
 
 import httpx
 from bs4 import BeautifulSoup
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, HTTPException
 
 from database import get_db
 from models import SuccessResponse, SearchDiscoverRequest, ImportRequest, CourseCreate
@@ -324,7 +325,7 @@ async def start_discover(req: dict, background_tasks: BackgroundTasks):
 
 
 @router.post("/import-urls")
-async def import_urls(req: ImportRequest, background_tasks: BackgroundTasks):
+async def import_urls(req: ImportRequest):
     """批量导入 URL 到知识库（支持自动创建课程）"""
     urls = req.urls
     course_id = req.course_id
@@ -359,7 +360,14 @@ async def import_urls(req: ImportRequest, background_tasks: BackgroundTasks):
 
     # 导入完成后，异步触发图谱更新 + 争议分析
     if len(imported) > 0:
-        background_tasks.add_task(_update_graph_and_controversy, course_id)
+        def _run_bg():
+            try:
+                asyncio.run(_update_graph_and_controversy(course_id))
+            except Exception as e:
+                print(f"[import] 后台任务失败: {e}", flush=True)
+                import traceback
+                traceback.print_exc()
+        threading.Thread(target=_run_bg, daemon=True).start()
 
     return {
         "imported": len(imported),
@@ -373,11 +381,12 @@ async def import_urls(req: ImportRequest, background_tasks: BackgroundTasks):
 
 async def _update_graph_and_controversy(course_id: str):
     """后台：导入资料后更新知识图谱 + 触发争议分析"""
+    import sys
+    print(f"[import] 后台任务开始: {course_id}", flush=True)
     try:
         from services.llm_service import LLMService
         from services.graph_service import GraphService
 
-        # 获取所有文档
         with get_db() as conn:
             rows = conn.execute(
                 "SELECT id, title, content FROM documents WHERE course_id = ?",
@@ -385,13 +394,18 @@ async def _update_graph_and_controversy(course_id: str):
             ).fetchall()
             docs = [{"id": r["id"], "title": r["title"], "content": r["content"] or ""} for r in rows]
 
+        print(f"[import] 文档数: {len(docs)}", flush=True)
+
         if not docs:
+            print(f"[import] 无文档，退出", flush=True)
             return
 
         # 1. 重新生成知识图谱
         llm = LLMService()
         gs = GraphService(llm)
+        print(f"[import] 开始生成图谱...", flush=True)
         graph = await gs.generate_graph(course_id, docs)
+        print(f"[import] 图谱节点数: {len(graph.get('nodes', []))}", flush=True)
 
         # 保存图谱
         now = int(datetime.now().timestamp() * 1000)
@@ -403,13 +417,17 @@ async def _update_graph_and_controversy(course_id: str):
             conn.commit()
 
         push_event(course_id, "graph_updated", graph)
+        print(f"[import] 已推送 graph_updated 事件", flush=True)
 
-        # 2. 触发争议分析（内部会推送 controversy_ready SSE 事件）
+        # 2. 触发争议分析
         if len(docs) >= 2:
             from routers.three_ask import controversy_detection_background
+            print(f"[import] 开始争议分析...", flush=True)
             await controversy_detection_background(course_id)
 
-        print(f"[import] 课程 {course_id} 图谱+争议更新完成")
+        print(f"[import] 课程 {course_id} 图谱+争议更新完成", flush=True)
 
     except Exception as e:
-        print(f"[import] 图谱/争议更新失败: {e}")
+        print(f"[import] 图谱/争议更新失败: {e}", flush=True)
+        import traceback
+        traceback.print_exc()

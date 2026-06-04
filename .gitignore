@@ -31,3 +31,4 @@ openspec-report.json
 
 # Duplicate JS files (TS source is the truth)
 client/src/**/*.js
+data/

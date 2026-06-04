@@ -82,12 +82,23 @@ const LearningSpace = () => {
     setControError('')
     try {
       const res = await threeAskApi.getControversies(courseId)
-      setControversies(res.controversies)
+      if (res.controversies?.length > 0) {
+        setControversies(res.controversies)
+        setControLoading(false)
+        return
+      }
+      // 无缓存数据，触发异步检测，等待 SSE 推送
+      const detectRes = await threeAskApi.detectControversy(courseId)
+      if (detectRes.status === 'skipped') {
+        setControLoading(false)
+        return
+      }
+      // 不立即关闭 loading — 等待 controversy_ready SSE 事件
     } catch (e) {
       setControError(friendlyMsg(e))
       setControversies([])
+      setControLoading(false)
     }
-    setControLoading(false)
   }, [courseId])
 
   // 切换 tab 时加载对应数据
@@ -121,7 +132,11 @@ const LearningSpace = () => {
     es.addEventListener('graph_updated', (e: MessageEvent) => {
       try {
         const data = JSON.parse(e.data)
-        if (data.nodes) setGraphData(data)
+        if (data.nodes) {
+          setGraphData(data)
+          setGraphLoading(false)
+          setGraphError('')
+        }
       } catch {}
     })
 
@@ -131,6 +146,7 @@ const LearningSpace = () => {
         if (data.controversies) {
           setControversies(data.controversies)
           setControError('')
+          setControLoading(false)
         }
       } catch {}
     })
