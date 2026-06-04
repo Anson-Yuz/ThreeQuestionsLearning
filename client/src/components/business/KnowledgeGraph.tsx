@@ -50,6 +50,7 @@ const EN_TO_CATEGORY: Record<string, string> = {
 }
 
 const CATEGORY_ORDER = ['记忆', '理解', '应用', '分析', '评价', '创造'] as const
+const VALID_CATEGORIES = ['记忆', '理解', '应用', '分析', '评价', '创造']
 
 const normalizeNode = (n: GraphNode): GraphNode => {
   const bloomLevel = (n.bloomLevel || n.bloom_level || 'understand').toLowerCase()
@@ -156,7 +157,7 @@ const GraphContent = memo(({ data, loading, onNodeClick }: KnowledgeGraphProps) 
       tooltip: {
         trigger: 'item',
         confine: true,
-        extraCssText: 'max-width:240px;white-space:normal;word-break:break-word;overflow-wrap:break-word;',
+        extraCssText: 'max-width:240px;white-space:normal;word-break:break-all;overflow-wrap:break-word;',
         formatter: (params: any) => {
           if (params.dataType === 'node') {
             const cat = params.data.category || '理解'
@@ -198,7 +199,7 @@ const GraphContent = memo(({ data, loading, onNodeClick }: KnowledgeGraphProps) 
           itemStyle: { color: BLOOM_COLORS[name] },
         })),
         data: safeData.nodes.map(node => {
-          const cat = node.category || '理解'
+          const cat = (node.category && VALID_CATEGORIES.includes(node.category)) ? node.category : '理解'
           const catColor = BLOOM_COLORS[cat] || '#6B7280'
           return {
             ...node,
