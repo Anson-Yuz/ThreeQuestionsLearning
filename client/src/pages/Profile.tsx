@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import {
   PersonIcon,
   ArchiveIcon,
@@ -9,15 +9,77 @@ import {
 } from '../components/ui/Icons'
 import ThemeToggle from '../components/ui/ThemeToggle'
 import { useCourseStore } from '../stores/courseStore'
+import { coursesApi } from '../api/courses'
+import toast from 'react-hot-toast'
 
 const Profile = () => {
   const { courses, fetchCourses } = useCourseStore()
   const activeCount = courses.filter((c) => c.status === 'active' || c.status === 'completed').length
   const completedCount = courses.filter((c) => c.status === 'completed').length
+  const [weeklyTrend, setWeeklyTrend] = useState<{ day: string; value: number }[]>([])
 
   useEffect(() => {
     fetchCourses()
-  }, [fetchCourses])
+    fetchWeeklyTrend()
+  }, [])
+
+  const fetchWeeklyTrend = async () => {
+    try {
+      const res = await fetch('/api/user/weekly-trend')
+      const data = await res.json()
+      setWeeklyTrend(data.trend || [])
+    } catch {
+      console.error('获取周趋势失败')
+    }
+  }
+
+  // 课程归档
+  const handleArchive = async () => {
+    if (!courses || courses.length === 0) {
+      toast.error('暂无课程可归档')
+      return
+    }
+    const activeCourse = courses.find((c) => c.status !== 'archived')
+    if (activeCourse) {
+      try {
+        await coursesApi.archive(activeCourse.id)
+        toast.success(`课程"${activeCourse.title}"已归档`)
+        fetchCourses()
+      } catch {
+        toast.error('归档失败')
+      }
+    } else {
+      toast.success('所有课程已归档')
+    }
+  }
+
+  // 资料上传历史
+  const handleUploadHistory = () => {
+    toast('资料上传历史功能即将上线')
+  }
+
+  // 数据导出
+  const handleExportData = async () => {
+    try {
+      const res = await fetch('/api/user/export')
+      if (!res.ok) throw new Error('导出失败')
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `learning_data_${Date.now()}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+      toast.success('数据已导出')
+    } catch {
+      toast.error('数据导出功能暂不可用')
+    }
+  }
+
+  // 设置
+  const handleSettings = () => {
+    toast('设置页面即将上线，目前可切换深色模式')
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-black">
@@ -64,41 +126,37 @@ const Profile = () => {
         {/* 周学习趋势 */}
         <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-sm border border-gray-100 dark:border-gray-700">
           <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-4 uppercase tracking-wide">周学习趋势</h2>
-          <div className="flex items-end justify-between h-28 gap-1.5 px-1">
-            {[
-              { day: '周一', value: 0.45 },
-              { day: '周二', value: 0.60 },
-              { day: '周三', value: 0.30 },
-              { day: '周四', value: 0.90 },
-              { day: '周五', value: 0.40 },
-              { day: '周六', value: 0.75 },
-              { day: '周日', value: 0.55 },
-            ].map((item, idx) => (
-              <div key={idx} className="flex-1 flex flex-col items-center gap-1.5">
-                <div
-                  className="w-full bg-gradient-to-t from-blue-500 to-blue-400 rounded-t-md"
-                  style={{ height: `${item.value * 100}%`, minHeight: 4 }}
-                />
-                <span className="text-[11px] text-gray-400 font-medium">{item.day}</span>
-              </div>
-            ))}
+           <div className="flex items-end justify-between h-28 gap-1.5 px-1">
+            {weeklyTrend.length > 0 && weeklyTrend.some(item => item.value > 0) ? (
+              weeklyTrend.map((item, idx) => (
+                <div key={idx} className="flex-1 flex flex-col items-center gap-1.5">
+                  <div
+                    className="w-full bg-gradient-to-t from-blue-500 to-blue-400 rounded-t-md"
+                    style={{ height: `${item.value * 100}%`, minHeight: 4 }}
+                  />
+                  <span className="text-[11px] text-gray-400 font-medium">{item.day}</span>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-gray-400 self-center w-full text-center">暂无学习记录</p>
+            )}
           </div>
         </div>
 
         {/* 功能列表 */}
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden divide-y divide-gray-100 dark:divide-gray-700">
-          <FunctionItem icon={<ArchiveIcon className="w-5 h-5" />} label="课程归档" />
-          <FunctionItem icon={<UploadIcon className="w-5 h-5" />} label="资料上传历史" />
-          <FunctionItem icon={<DownloadIcon className="w-5 h-5" />} label="数据导出" />
-          <FunctionItem icon={<GearIcon className="w-5 h-5" />} label="设置" />
+          <FunctionItem icon={<ArchiveIcon className="w-5 h-5" />} label="课程归档" onClick={handleArchive} />
+          <FunctionItem icon={<UploadIcon className="w-5 h-5" />} label="资料上传历史" onClick={handleUploadHistory} />
+          <FunctionItem icon={<DownloadIcon className="w-5 h-5" />} label="数据导出" onClick={handleExportData} />
+          <FunctionItem icon={<GearIcon className="w-5 h-5" />} label="设置" onClick={handleSettings} />
         </div>
       </div>
     </div>
   )
 }
 
-const FunctionItem = ({ icon, label }: { icon: React.ReactNode; label: string }) => (
-  <button className="w-full px-4 py-3.5 flex items-center gap-3 active:bg-gray-50 dark:active:bg-gray-700 transition-colors">
+const FunctionItem = ({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick?: () => void }) => (
+  <button onClick={onClick} className="w-full px-4 py-3.5 flex items-center gap-3 active:bg-gray-50 dark:active:bg-gray-700 transition-colors">
     <span className="text-blue-500 w-6 flex justify-center">{icon}</span>
     <span className="flex-1 text-left text-gray-900 dark:text-white text-[15px]">{label}</span>
     <ChevronRightIcon className="w-4 h-4 text-gray-300" />

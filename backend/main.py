@@ -34,7 +34,7 @@ app.add_middleware(
 # 导入路由
 # ============================================
 
-from routers import courses, knowledge, three_ask, quiz, sse, discover
+from routers import courses, knowledge, three_ask, quiz, sse, discover, user_router
 
 app.include_router(courses.router, prefix="/api/courses", tags=["课程管理"])
 app.include_router(knowledge.router, prefix="/api/knowledge", tags=["知识库"])
@@ -42,6 +42,7 @@ app.include_router(three_ask.router, prefix="/api/three-ask", tags=["三问引�
 app.include_router(quiz.router, prefix="/api/quiz", tags=["测评中心"])
 app.include_router(sse.router, prefix="/api/sse", tags=["实时推送"])
 app.include_router(discover.router, prefix="/api/search", tags=["发现资料"])
+app.include_router(user_router.router, prefix="/api/user", tags=["用户"])
 
 # ============================================
 # 健康检查

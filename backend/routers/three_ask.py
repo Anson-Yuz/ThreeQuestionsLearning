@@ -9,6 +9,8 @@ from typing import List, Optional
 from database import get_db
 from models import QuizSubmit, SuccessResponse
 
+# 端点: /api/three-ask/graph/generate/{course_id} /api/three-ask/graph/update/{course_id} /api/three-ask/controversy/detect/{course_id} /api/three-ask/controversy/{course_id} /api/three-ask/quiz/generate/{course_id} /api/three-ask/quiz/submit /api/three-ask/quiz/{course_id}/complete /api/three-ask/progress/{course_id}
+
 router = APIRouter()
 
 def _run_async_bg(coro):
