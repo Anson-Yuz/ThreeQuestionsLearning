@@ -437,7 +437,12 @@ async def _update_graph_and_controversy(course_id: str):
             print(f"[import] 开始争议分析...", flush=True)
             await controversy_detection_background(course_id)
 
-        print(f"[import] 课程 {course_id} 图谱+争议更新完成", flush=True)
+        # 3. 触发深度测评题生成
+        from services.quiz_service import _background_generate_llm_quiz
+        print(f"[import] 开始测评题生成...", flush=True)
+        await _background_generate_llm_quiz(course_id)
+
+        print(f"[import] 课程 {course_id} 图谱+争议+测评更新完成", flush=True)
 
     except Exception as e:
         print(f"[import] 图谱/争议更新失败: {e}", flush=True)

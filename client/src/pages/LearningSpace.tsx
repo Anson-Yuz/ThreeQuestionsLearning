@@ -33,9 +33,11 @@ const LearningSpace = () => {
   const [graphData, setGraphData] = useState<GraphData>({ nodes: [], links: [] })
   const [graphLoading, setGraphLoading] = useState(false)
   const [graphError, setGraphError] = useState('')
+  const [graphGenerating, setGraphGenerating] = useState(false)
   const [controversies, setControversies] = useState<any[]>([])
   const [controLoading, setControLoading] = useState(false)
   const [controError, setControError] = useState('')
+  const [controGenerating, setControGenerating] = useState(false)
   const [discoverCount, setDiscoverCount] = useState(0)
   const [discoverResults, setDiscoverResults] = useState<DiscoverResult[]>([])
   const [showDiscoverPanel, setShowDiscoverPanel] = useState(false)
@@ -61,8 +63,8 @@ const LearningSpace = () => {
     if (!courseId) return
     setGraphLoading(true)
     setGraphError('')
-    // 1) 优先读取缓存（< 50ms）
     try {
+      // 1) 纯查缓存，不触发生成
       const cached = await coursesApi.getCachedGraph(courseId)
       if (mountedRef.current) {
         if (cached.status === 'ready' && cached.data?.nodes?.length) {
@@ -70,32 +72,29 @@ const LearningSpace = () => {
           setGraphLoading(false)
           return
         }
-        // status === 'generating'：保持 loading，等 SSE graph_updated
-      }
-    } catch {
-      // 缓存接口异常时降级到 generate
-    }
-    // 2) 缓存未命中或失败 → 强制重新生成
-    try {
-      const graph = await threeAskApi.generateGraph(courseId)
-      if (mountedRef.current) {
-        setGraphData(graph)
-        setGraphLoading(false)
+        // 无缓存 → fire-and-forget 触发后台生成
+        if (!graphGenerating) {
+          setGraphGenerating(true)
+          threeAskApi.generateGraph(courseId).catch(() => {
+            if (mountedRef.current) setGraphGenerating(false)
+          })
+        }
+        // 保持 loading，等 SSE graph_updated
       }
     } catch (e) {
       if (mountedRef.current) {
         setGraphError(friendlyMsg(e))
-        setGraphData({ nodes: [], links: [] })
         setGraphLoading(false)
       }
     }
-  }, [courseId])
+  }, [courseId, graphGenerating])
 
   const handleLoadControversy = useCallback(async () => {
     if (!courseId) return
     setControLoading(true)
     setControError('')
     try {
+      // 1. 纯查缓存，不触发生成
       const res = await threeAskApi.getControversies(courseId)
       if (!mountedRef.current) return
       if (res.controversies?.length > 0) {
@@ -103,20 +102,21 @@ const LearningSpace = () => {
         setControLoading(false)
         return
       }
-      const detectRes = await threeAskApi.detectControversy(courseId)
-      if (!mountedRef.current) return
-      if (detectRes.status === 'skipped') {
-        setControLoading(false)
-        return
+      // 2. 无缓存 → fire-and-forget 触发后台生成，不阻塞
+      if (!controGenerating) {
+        setControGenerating(true)
+        threeAskApi.detectControversy(courseId).catch(() => {
+          if (mountedRef.current) setControGenerating(false)
+        })
       }
+      // 保持 loading 状态，等待 SSE 推送
     } catch (e) {
       if (mountedRef.current) {
         setControError(friendlyMsg(e))
-        setControversies([])
         setControLoading(false)
       }
     }
-  }, [courseId])
+  }, [courseId, controGenerating])
 
   // 切换 tab 时加载对应数据
   useEffect(() => {
@@ -167,12 +167,11 @@ const LearningSpace = () => {
       es.addEventListener('graph_updated', (e: MessageEvent) => {
         try {
           const data = JSON.parse(e.data)
-          console.log('🔍 SSE graph_updated 原始数据:', data)
-          console.log('🔍 第一个节点:', data.nodes?.[0])
           if (data.nodes && mountedRef.current) {
             setGraphData(data)
             setGraphLoading(false)
             setGraphError('')
+            setGraphGenerating(false)
           }
         } catch {}
       })
@@ -184,6 +183,7 @@ const LearningSpace = () => {
             setControversies(data.controversies)
             setControError('')
             setControLoading(false)
+            setControGenerating(false)
           }
         } catch {}
       })
