@@ -143,8 +143,8 @@ class GraphService:
             print(f"[graph] bloom分布: {dict(dist)}")
             return self._calculate_layout(validated)
 
-        print(f"[graph] 课程 {course_id}: LLM 未返回有效图谱节点")
-        return {"nodes": [], "links": []}
+        print(f"[graph] 课程 {course_id}: LLM 未返回有效图谱节点，启用关键词降级")
+        return self._calculate_layout(self._quick_fallback_graph(documents))
 
     def _check_quality(self, graph: Dict) -> Tuple[bool, str]:
         """质量门禁：节点数 / 关系多样性 / 阈值概念"""

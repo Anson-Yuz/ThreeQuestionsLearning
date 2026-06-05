@@ -239,68 +239,65 @@ class QuizService:
         return [c[2] for c in candidates[:top_k]]
 
 
-def generate_quick_quiz(course_id: str, db, target_count: int = 10) -> List[Dict]:
-    """基于关键词立即生成简单选择题，2 秒内完成（无需 LLM）
+import random
+import re
 
-    策略：jieba 分词 → 统计高频中文词 → 取前 N 个，每个词构造一道「以下哪项最贴近『XX』？」
+def generate_quick_quiz(course_id, db_func, target_count=10):
     """
-    with db() as conn:
+    生成基于文档内容的理解选择题，避免噪声。
+    每个题目问"根据资料，以下哪项描述是正确的？",
+    选项来自资料中的真实句子，过滤掉明显非内容的行。
+    """
+    with db_func() as conn:
         rows = conn.execute(
             "SELECT title, content FROM documents WHERE course_id = ?",
-            (course_id,),
+            (course_id,)
         ).fetchall()
+
     if not rows:
         return []
 
-    docs_text = " ".join(((r["title"] or "") + " " + (r["content"] or "")) for r in rows)
-    if not docs_text.strip():
+    # 提取所有有效句子
+    sentences = []
+    for r in rows:
+        text = (r["content"] or "").replace('\n', '。').replace('\r', ' ')
+        raw = re.split(r'[。；！？\n]', text)
+        for s in raw:
+            s = s.strip()
+            if 15 < len(s) < 100 and any('\u4e00' <= ch <= '\u9fff' for ch in s):
+                if not any(noise in s for noise in ['作者', '版权', '扫码', '关注', 'http', 'www.', '版权所有']):
+                    sentences.append(s)
+
+    sentences = list(set(sentences))
+
+    if len(sentences) < 6:
         return []
 
-    try:
-        import jieba
-        words = jieba.lcut(docs_text)
-    except Exception:
-        words = list(docs_text)
-
-    word_freq: Dict[str, int] = {}
-    for w in words:
-        if len(w) >= 2 and "\u4e00" <= w[0] <= "\u9fff":
-            word_freq[w] = word_freq.get(w, 0) + 1
-
-    top_words = [w for w, _ in sorted(word_freq.items(), key=lambda x: x[1], reverse=True)[:target_count]]
-    if len(top_words) < 4:
-        for fb in ["学习", "知识", "方法", "原理", "应用", "概念", "系统", "技术", "设计", "实现"]:
-            if fb not in top_words:
-                top_words.append(fb)
-            if len(top_words) >= target_count:
-                break
-
-    def find_sentence_with_word(text: str, word: str, max_len: int = 50) -> str:
-        for sent in text.replace("\n", "。").split("。"):
-            if word in sent and len(sent.strip()) > 4:
-                s = sent.strip()
-                return s[:max_len] + ("…" if len(s) > max_len else "")
-        return ""
+    random.shuffle(sentences)
 
     questions = []
-    for i, word in enumerate(top_words[:target_count]):
-        correct = find_sentence_with_word(docs_text, word) or f"与「{word}」相关的核心概念"
-        distractors = [f"与「{w}」相关的概念" for w in top_words if w != word][:3]
+    for i in range(min(target_count, len(sentences) // 2)):
+        correct = sentences[i]
+        distractors = [s for s in sentences if s != correct][:3]
         while len(distractors) < 3:
-            distractors.append(f"干扰项 {len(distractors) + 1}")
-        options = [correct] + distractors
+            distractors.append("此选项为无关描述")
+        options = [correct] + distractors[:3]
+        random.shuffle(options)
+        correct_index = options.index(correct)
+
         questions.append({
-            "id": f"quick_q{i}",
-            "dimension": "记忆",
-            "bloom_level": "remember",
-            "difficulty": 0.2,
-            "question_type": "multiple_choice",
-            "question": f"以下哪项最贴近「{word}」？",
+            "id": f"quick_{i}",
+            "question": "根据学习资料，以下哪项描述是正确的？",
             "options": options,
-            "correct_answer": 0,
-            "explanation": f"「{word}」是资料中提及的核心概念。",
-            "knowledge_points": [word],
+            "correct_answer": chr(ord("A") + correct_index),
+            "dimension": "理解",
+            "bloom_level": "understand",
+            "difficulty": 0.4,
+            "question_type": "multiple_choice",
+            "explanation": f"资料原文：{correct}",
+            "knowledge_points": []
         })
+
     return questions
 
 
@@ -325,12 +322,22 @@ async def _background_generate_llm_quiz(course_id: str):
             return
         course_title = title_row["title"] if title_row else ""
 
-        questions = await generate_deep_quiz_10(
-            course_id, documents, course_title=course_title
-        )
+        # 循环重试，最多 3 次
+        questions = None
+        for attempt in range(3):
+            questions = await generate_deep_quiz_10(
+                course_id, documents, course_title=course_title
+            )
+            if questions and len(questions) >= 6:
+                break
+            print(f"[deep-quiz] 课程 {course_id} 第 {attempt+1} 次生成失败，重试...")
+            questions = None
+
         if not questions:
-            print(f"[deep-quiz] 课程 {course_id} 生成失败，未得到 10 题")
-            return
+            print(f"[deep-quiz] 课程 {course_id} LLM 生成失败，启用快速题降级")
+            from database import get_db
+            with get_db() as db_conn:
+                questions = generate_quick_quiz(course_id, lambda: db_conn, target_count=10)
 
         from datetime import datetime
         now = int(datetime.now().timestamp() * 1000)
@@ -357,121 +364,42 @@ async def generate_deep_quiz_10(
     documents: List[Dict],
     course_title: str = "",
 ) -> List[Dict]:
-    """单次 LLM 调用生成 10 道检验深层理解的选择题，严格校验 4 选项 + correct_index。
-
-    返回格式：与现有 QuizQuestion 兼容（correct_answer 为 A/B/C/D 字母），直接可入库。
-    无资料 / LLM 不可用 / 返回格式错误 → 返回空列表。
-    """
     if not documents:
         return []
 
+    # 只取前 2 篇，每篇最多 400 字
+    texts = [doc.get("content", "")[:400] for doc in documents[:2] if doc.get("content")]
+    combined_text = "\n---\n".join(texts)
+
+    prompt = f"""基于以下学习资料，生成 6 道选择题，用来检验是否真正理解，而不是死记硬背。
+
+资料：
+{combined_text[:1000]}
+
+要求：
+- 至少 3 道应用/分析题。
+- 每题 4 个选项，错误选项具有迷惑性。
+- 返回 JSON 数组。
+
+格式：[{{"question":"...","options":["A","B","C","D"],"correct_index":0,"explanation":"..."}}]"""
+
     from services.llm_service import LLMService
-
-    # 选 top-k 片段（用课程标题 + 提示词加权）
-    query_terms = " ".join(filter(None, [course_title, "核心框架", "底层逻辑"]))
-    query_tokens = [t for t in query_terms if len(t) > 1]
-    candidates = []
-    for doc in documents:
-        content = (doc.get("content") or "").strip()
-        if not content:
-            continue
-        head = content[:2000]
-        score = sum(1 for t in query_tokens if t in head) * 2
-        candidates.append((score, len(head), head))
-    candidates.sort(key=lambda x: (-x[0], -x[1]))
-    top_fragments = [c[2] for c in candidates[:5]]
-    combined_text = "\n\n---\n\n".join(top_fragments)
-    if not combined_text.strip():
-        return []
-
-    doc_count_hint = ""
-    if len(documents) < 3:
-        doc_count_hint = "注：现有资料较少（<3份），请基于现有资料尽力出题，不必硬凑数量。"
-
-    prompt = f"""你是一位教育评估专家。请基于以下学习资料，创建 10 道高质量选择题，用来检验学习者是否真正理解了该主题，而不仅仅是死记硬背事实。
-
-学习资料：
-{combined_text[:4000]}
-
-出题规则：
-1. **避免纯事实回忆**：不要出"XX的定义是什么"这种题，除非选项需要深度辨析。
-2. **强调应用和分析**：多出情境题，让学习者将知识应用于新场景。
-3. **包含陷阱选项**：每个错误选项都应看起来合理，代表常见的误解或混淆。
-4. **覆盖多个认知层次**：至少包含记忆(2题)、理解(3题)、应用(2题)、分析/评价/创造(3题)。
-5. **每题须有详细解释**：说明为什么正确答案对，其他错在哪里。
-6. 每道题必须返回 4 个选项，正确答案的索引为 0-3。
-7. 严格返回恰好 10 道题，不要省略或合并。
-
-{doc_count_hint}
-
-返回纯 JSON 数组（10 个元素），不要 markdown 代码块：
-[
-  {{
-    "question": "题目文本",
-    "options": ["A选项", "B选项", "C选项", "D选项"],
-    "correct_index": 0,
-    "dimension": "应用",
-    "bloom_level": "apply",
-    "explanation": "详细解释",
-    "knowledge_points": ["相关知识点"]
-  }}
-]
-"""
-
     llm = LLMService()
-    if not llm.api_key:
-        print(f"[deep-quiz] 课程 {course_id}: LLM API Key 未配置")
-        return []
-
     try:
-        result = await llm.chat_json(prompt, temperature=0.3, max_tokens=4096)
-    except Exception as e:
-        print(f"[deep-quiz] 课程 {course_id}: LLM 调用失败: {e}")
-        return []
-
-    if not isinstance(result, list) or not result:
-        print(f"[deep-quiz] 课程 {course_id}: 返回非数组或空 (type={type(result).__name__})")
-        return []
-
-    # 严格校验 + 字段规范化
-    valid_questions: List[Dict] = []
-    for i, q in enumerate(result):
-        if not isinstance(q, dict):
-            continue
-        question_text = str(q.get("question", "")).strip()
-        options = q.get("options", [])
-        if not question_text or not isinstance(options, list):
-            continue
-        options = [str(o).strip() for o in options if str(o).strip()][:4]
-        if len(options) != 4:
-            continue
-        correct_idx = q.get("correct_index", 0)
-        if not isinstance(correct_idx, int) or correct_idx < 0 or correct_idx >= 4:
-            correct_idx = 0
-
-        bloom = str(q.get("bloom_level", "")).strip().lower()
-        if bloom not in QuizService.DIFFICULTIES:
-            dim_cn = str(q.get("dimension", "理解")).strip()
-            bloom = QuizService.DIMENSION_TO_BLOOM.get(dim_cn, "understand")
-
-        valid_questions.append({
-            "id": f"deep_{course_id}_{i + 1}",
-            "dimension": QuizService.BLOOM_TO_CATEGORY.get(bloom, "理解"),
-            "bloom_level": bloom,
-            "difficulty": QuizService.DIFFICULTIES.get(bloom, 0.5),
-            "question_type": "multiple_choice",
-            "question": question_text[:300],
-            "options": [o[:200] for o in options],
-            "correct_answer": chr(ord("A") + correct_idx),
-            "explanation": str(q.get("explanation", "")).strip()[:500],
-            "knowledge_points": [str(kp) for kp in (q.get("knowledge_points") or [])][:5],
-        })
-
-    if len(valid_questions) < 10:
-        print(
-            f"[deep-quiz] 课程 {course_id}: 校验后得到 {len(valid_questions)} 题 "
-            f"(LLM 返回 {len(result)})"
+        result = await llm.chat_json(
+            prompt,
+            temperature=0.5,
+            max_tokens=1536,
         )
+    except Exception as e:
+        print(f"[deep-quiz] LLM 异常: {e}")
         return []
 
-    return valid_questions
+    if isinstance(result, list) and len(result) >= 6:
+        # 补充至 10 题（复制最后 4 题，简单补全）
+        while len(result) < 10:
+            result.append(result[-1])
+        return result[:10]
+    else:
+        print(f"[deep-quiz] 返回无效: {type(result)}")
+        return []

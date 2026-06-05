@@ -288,6 +288,43 @@ async def get_quick_quiz(course_id: str, background_tasks: BackgroundTasks):
     }
 
 
+@router.post("/{course_id}/force-deep-quiz")
+async def force_deep_quiz(course_id: str):
+    """
+    强制触发 LLM 深度题生成（调试用）
+    直接调用 LLM，不降级，存库后推送 quiz_ready
+    """
+    from services.quiz_service import generate_deep_quiz_10
+    with get_db() as conn:
+        docs = conn.execute(
+            "SELECT id, title, content FROM documents WHERE course_id = ? LIMIT 8",
+            (course_id,)
+        ).fetchall()
+        title_row = conn.execute(
+            "SELECT title FROM courses WHERE id = ?", (course_id,)
+        ).fetchone()
+    documents = [
+        {"id": d["id"], "title": d["title"], "content": d["content"] or ""} for d in docs
+    ]
+    if not documents:
+        return {"error": "no documents"}
+    course_title = title_row["title"] if title_row else ""
+    questions = await generate_deep_quiz_10(course_id, documents, course_title=course_title)
+    if questions and len(questions) >= 6:
+        now = int(datetime.now().timestamp() * 1000)
+        with get_db() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO course_quizzes (course_id, quizzes_json, updated_at) VALUES (?, ?, ?)",
+                (course_id, json.dumps(questions, ensure_ascii=False), now)
+            )
+            conn.commit()
+        from routers.sse import push_event
+        push_event(course_id, "quiz_ready", {"quizzes": questions, "count": len(questions), "source": "llm"})
+        print(f"[force-deep-quiz] 课程 {course_id} 成功推送 {len(questions)} 道深度题")
+        return {"status": "success", "count": len(questions)}
+    return {"status": "llm_failed", "received": len(questions) if questions else 0}
+
+
 @router.get("/search")
 async def search_courses(
     q: str = Query(..., min_length=1, description="搜索关键词"),
