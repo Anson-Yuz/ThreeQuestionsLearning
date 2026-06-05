@@ -63,21 +63,23 @@ async def submit_answer(req: QuizSubmit):
 async def complete_quiz(course_id: str, req: QuizComplete):
     """完成测评，生成报告"""
 
-    # 计算统计数据
+    # 计算统计数据（兼容 is_correct / isCorrect 两种字段名）
     total = len(req.answers)
-    correct = sum(1 for a in req.answers if a.get("is_correct", False))
+    correct = sum(1 for a in req.answers if a.get("is_correct", False) or a.get("isCorrect", False))
     accuracy = (correct / total * 100) if total > 0 else 0
 
-    # 计算各维度得分
+    # 计算各维度得分（动态计算，每维度题目数不固定）
+    dim_questions = {}
+    dim_correct = {}
+    for a in req.answers:
+        dim = a.get("dimension", "未分类")
+        dim_questions[dim] = dim_questions.get(dim, 0) + 1
+        if a.get("is_correct", False) or a.get("isCorrect", False):
+            dim_correct[dim] = dim_correct.get(dim, 0) + 1
     ability_scores = {
-        "remember": 0, "understand": 0, "apply": 0,
-        "analyze": 0, "evaluate": 0, "create": 0
+        dim: (dim_correct.get(dim, 0) / dim_questions[dim] * 100) if dim_questions.get(dim, 0) > 0 else 0
+        for dim in dim_questions
     }
-
-    for answer in req.answers:
-        dim = answer.get("dimension", "understand")
-        if dim in ability_scores and answer.get("is_correct", False):
-            ability_scores[dim] += 100 / 2  # 每个维度2题
 
     # 保存测评记录
     now = int(datetime.now().timestamp() * 1000)
@@ -89,17 +91,18 @@ async def complete_quiz(course_id: str, req: QuizComplete):
                 ability_analyze = ?, ability_evaluate = ?, ability_create = ?,
                 overall_progress = 100, updated_at = ?
             WHERE course_id = ?
-        """, (accuracy, ability_scores["remember"], ability_scores["understand"],
-              ability_scores["apply"], ability_scores["analyze"], ability_scores["evaluate"],
-              ability_scores["create"], now, course_id))
+        """, (accuracy, ability_scores.get("remember", 0), ability_scores.get("understand", 0),
+              ability_scores.get("apply", 0), ability_scores.get("analyze", 0),
+              ability_scores.get("evaluate", 0), ability_scores.get("create", 0), now, course_id))
         conn.commit()
 
-    # 收集错题
+    # 收集错题（兼容 content/question 两种字段名）
     mistakes = []
     for answer in req.answers:
-        if not answer.get("is_correct", False):
+        is_correct = answer.get("is_correct", False) or answer.get("isCorrect", False)
+        if not is_correct:
             mistakes.append({
-                "question": answer.get("content", ""),
+                "question": answer.get("content") or answer.get("question", ""),
                 "user_answer": answer.get("user_answer", ""),
                 "correct_answer": answer.get("correct_answer", ""),
                 "explanation": answer.get("explanation", "")
@@ -142,11 +145,14 @@ async def get_report(course_id: str):
         if not progress:
             raise HTTPException(404, "暂无测评报告")
 
-        # 获取错题记录
-        mistakes_rows = conn.execute(
-            "SELECT * FROM quiz_records WHERE course_id = ? AND is_correct = 0",
+        # 获取题目总数和错题记录
+        all_rows = conn.execute(
+            "SELECT * FROM quiz_records WHERE course_id = ?",
             (course_id,)
         ).fetchall()
+        total_questions = len(all_rows)
+
+        mistakes_rows = [r for r in all_rows if not r["is_correct"]]
 
         mistakes = []
         for row in mistakes_rows:
@@ -172,10 +178,12 @@ async def get_report(course_id: str):
             "analyze": "分析", "evaluate": "评价", "create": "创造"
         }
 
+        correct_count = int((progress["q3_score"] or 0) / 100 * total_questions) if total_questions > 0 else 0
+
         return {
             "accuracy": progress["q3_score"] or 0,
-            "totalQuestions": 12,
-            "correctCount": int((progress["q3_score"] or 0) / 100 * 12),
+            "totalQuestions": total_questions,
+            "correctCount": correct_count,
             "abilityScores": ability_scores,
             "mistakes": mistakes,
             "suggestions": {

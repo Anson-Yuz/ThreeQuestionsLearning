@@ -132,4 +132,23 @@ export const coursesApi = {
   restore: (courseId: string): Promise<{ success: boolean; message: string }> => {
     return apiClient.patch(`/courses/${courseId}/status`, { status: 'active' });
   },
+
+  // 完成测评（提交答案到后端，生成报告）
+  completeQuiz: (courseId: string, answers: any[]): Promise<{
+    accuracy: number;
+    totalQuestions: number;
+    correctCount: number;
+    abilityScores: Record<string, number>;
+    mistakes: Array<{
+      question: string;
+      userAnswer: string;
+      correctAnswer: string;
+      explanation: string;
+    }>;
+    suggestions: { weakAreas: string[]; studyTips: string };
+    totalTime: number;
+    averageTime: number;
+  }> => {
+    return apiClient.post(`/quiz/${courseId}/complete`, { answers });
+  },
 };

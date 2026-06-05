@@ -2,6 +2,7 @@ import { memo, useState, useCallback, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { NavBar } from '../components/layout/NavBar'
 import { useQuizStore } from '../stores/quizStore'
+import { coursesApi } from '../api/courses'
 
 const bloomLabels: Record<string, string> = {
   remember: '记忆', understand: '理解', apply: '应用',
@@ -45,10 +46,16 @@ const QuizPlay = () => {
     if (currentIndex < questions.length - 1) {
       nextQuestion()
     } else {
-      // 完成测评，跳转到报告页
-      navigate(`/quiz/${courseId}/report`)
+      // 完成测评，提交到后端并存储报告
+      coursesApi.completeQuiz(courseId!, answers).then((result) => {
+        setReport(result)
+        navigate(`/quiz/${courseId}/report`)
+      }).catch(() => {
+        // 提交失败仍跳转，本地已有报告数据
+        navigate(`/quiz/${courseId}/report`)
+      })
     }
-  }, [currentIndex, questions.length, courseId, navigate, nextQuestion])
+  }, [currentIndex, questions.length, courseId, navigate, nextQuestion, answers, setReport])
 
   const handlePrev = useCallback(() => {
     prevQuestion()
