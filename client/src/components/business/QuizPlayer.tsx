@@ -1,4 +1,4 @@
-import { memo, useState, useCallback } from 'react'
+import { memo, useState, useCallback, useEffect } from 'react'
 import { CheckCircleIcon, XIcon } from '../ui/Icons'
 
 interface QuizPlayerProps {
@@ -22,6 +22,12 @@ const QuizPlayer = memo(({ questions, currentIndex, onAnswer, onNext }: QuizPlay
   const [showFeedback, setShowFeedback] = useState(false)
   const question = questions[currentIndex]
   const progress = ((currentIndex + 1) / questions.length) * 100
+
+  // 题目切换时立即重置答题状态
+  useEffect(() => {
+    setSelectedIndex(-1)
+    setShowFeedback(false)
+  }, [currentIndex])
 
   // 从题目对象直接取 correctIndex（已在前端 normalizeQuiz规范化为数字）
   const correctIndex = Number(question.correctIndex ?? question.correct_index ?? 0)
