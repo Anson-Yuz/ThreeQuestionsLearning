@@ -310,7 +310,7 @@ async def force_deep_quiz(course_id: str):
         return {"error": "no documents"}
     course_title = title_row["title"] if title_row else ""
     questions = await generate_deep_quiz_10(course_id, documents, course_title=course_title)
-    if questions and len(questions) >= 6:
+    if questions and len(questions) >= 8:
         now = int(datetime.now().timestamp() * 1000)
         with get_db() as conn:
             conn.execute(

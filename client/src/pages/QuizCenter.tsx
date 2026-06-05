@@ -5,7 +5,6 @@ import QuizPlayer from '../components/business/QuizPlayer'
 import RadarChart from '../components/business/RadarChart'
 import EmptyState from '../components/ui/EmptyState'
 import { CheckCircleIcon, ArrowRightIcon } from '../components/ui/Icons'
-import { threeAskApi } from '../api/threeAsk'
 import { coursesApi } from '../api/courses'
 
 interface QuizItem {
@@ -31,43 +30,7 @@ const QuizCenter = () => {
   const [results, setResults] = useState<any>(null)
   const [submittingAll, setSubmittingAll] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
-
-  const loadQuiz = useCallback(() => {
-    if (!courseId) return
-    setLoading(true)
-    setErrorMsg('')
-
-    // 1) 快速测评：< 100ms 拿到关键词题，立即显示
-    const overallTimer = setTimeout(() => {
-      setLoading((curLoading) => {
-        if (curLoading) {
-          setErrorMsg('生成超时，请点击重试')
-          return false
-        }
-        return curLoading
-      })
-    }, 60000)
-
-    coursesApi.getQuickQuiz(courseId)
-      .then((res) => {
-        clearTimeout(overallTimer)
-        if (mountedRef.current && res.questions?.length) {
-          setQuestions(res.questions as unknown as QuizItem[])
-          setLoading(false)
-        } else if (mountedRef.current) {
-          // 快速题也空（无资料），降级到缓存接口
-          setErrorMsg('暂无资料，请先上传文档')
-          setLoading(false)
-        }
-      })
-      .catch((e) => {
-        clearTimeout(overallTimer)
-        if (mountedRef.current) {
-          setErrorMsg(e?.message || '生成失败')
-          setLoading(false)
-        }
-      })
-  }, [courseId])
+  const [quizSource, setQuizSource] = useState<'cache' | 'quick' | 'llm'>('quick')
 
   const mountedRef = useRef(true)
   useEffect(() => {
@@ -75,26 +38,73 @@ const QuizCenter = () => {
     return () => { mountedRef.current = false }
   }, [])
 
-  // 监听 SSE：后台 LLM 升级完成后用高质量题目替换
-  useEffect(() => {
+  // 缓存优先 + SSE 深度题替换
+  const loadQuiz = useCallback(async () => {
     if (!courseId) return
+    setLoading(true)
+    setErrorMsg('')
+
+    // 1. 优先读取缓存
+    try {
+      const cacheRes = await coursesApi.getCachedQuizzes(courseId)
+      if (cacheRes.status === 'ready' && cacheRes.data?.length > 0) {
+        if (mountedRef.current) {
+          setQuestions(cacheRes.data as unknown as QuizItem[])
+          setQuizSource('cache')
+          setLoading(false)
+          return
+        }
+      }
+    } catch (e) {
+      console.error('读取缓存失败', e)
+    }
+
+    // 2. 无缓存，请求快速题作为占位
+    try {
+      const quickRes = await coursesApi.getQuickQuiz(courseId)
+      if (quickRes.questions?.length > 0 && mountedRef.current) {
+        setQuestions(quickRes.questions as unknown as QuizItem[])
+        setQuizSource('quick')
+        setLoading(false)
+      } else {
+        setErrorMsg('暂无资料，请先上传文档')
+        setLoading(false)
+        return
+      }
+    } catch (e) {
+      console.error('快速题请求失败', e)
+      setErrorMsg('加载失败，请重试')
+      setLoading(false)
+      return
+    }
+
+    // 3. 建立 SSE，等待深度题生成后替换
     const es = new EventSource(`/api/sse/stream/${courseId}`)
     es.addEventListener('quiz_ready', (e: MessageEvent) => {
       try {
-        const data = JSON.parse(e.data)
-        if (data?.quizzes?.length && mountedRef.current) {
-          setQuestions(data.quizzes as unknown as QuizItem[])
+        const payload = JSON.parse(e.data)
+        if (payload?.quizzes?.length > 0 && mountedRef.current) {
+          setQuestions(payload.quizzes as unknown as QuizItem[])
+          setQuizSource('llm')
+          setLoading(false)
+          es.close()
         }
       } catch {}
     })
-    return () => es.close()
-  }, [courseId])
 
-  useEffect(() => {
+    // 60秒超时兜底
+    const timer = setTimeout(() => {
+      es.close()
+      if (mountedRef.current && loading) {
+        setLoading(false)
+      }
+    }, 60000)
+
     return () => {
-      // 组件卸载时无需特殊清理，pollTimer 闭包随 setLoading(false) 自然结束
+      clearTimeout(timer)
+      es.close()
     }
-  }, [])
+  }, [courseId])
 
   useEffect(() => {
     loadQuiz()
@@ -110,7 +120,6 @@ const QuizCenter = () => {
     if (currentIndex < questions.length - 1) {
       setCurrentIndex((prev) => prev + 1)
     } else {
-      // 提交所有答案
       setSubmittingAll(true)
       try {
         const answerList = Object.entries(answers).map(([qid, ans]) => {

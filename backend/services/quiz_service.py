@@ -322,22 +322,12 @@ async def _background_generate_llm_quiz(course_id: str):
             return
         course_title = title_row["title"] if title_row else ""
 
-        # 循环重试，最多 3 次
-        questions = None
-        for attempt in range(3):
-            questions = await generate_deep_quiz_10(
-                course_id, documents, course_title=course_title
-            )
-            if questions and len(questions) >= 6:
-                break
-            print(f"[deep-quiz] 课程 {course_id} 第 {attempt+1} 次生成失败，重试...")
-            questions = None
-
+        questions = await generate_deep_quiz_10(
+            course_id, documents, course_title=course_title
+        )
         if not questions:
-            print(f"[deep-quiz] 课程 {course_id} LLM 生成失败，启用快速题降级")
-            from database import get_db
-            with get_db() as db_conn:
-                questions = generate_quick_quiz(course_id, lambda: db_conn, target_count=10)
+            print(f"[deep-quiz] 课程 {course_id} 深度题生成失败，不推送任何内容")
+            return
 
         from datetime import datetime
         now = int(datetime.now().timestamp() * 1000)
@@ -367,39 +357,39 @@ async def generate_deep_quiz_10(
     if not documents:
         return []
 
-    # 只取前 2 篇，每篇最多 400 字
-    texts = [doc.get("content", "")[:400] for doc in documents[:2] if doc.get("content")]
-    combined_text = "\n---\n".join(texts)
+    # 精选前3篇文档，每篇截取 600 字
+    texts = [doc["content"][:600] for doc in documents[:3] if doc.get("content")]
+    combined = "\n\n---\n\n".join(texts)
 
-    prompt = f"""基于以下学习资料，生成 6 道选择题，用来检验是否真正理解，而不是死记硬背。
+    prompt = f"""你是一位教育评估专家。请基于以下学习资料，创建 10 道高质量选择题，用于检验学习者是否真正理解了该主题，而不仅仅是死记硬背事实。
 
-资料：
-{combined_text[:1000]}
+学习资料：
+{combined}
 
-要求：
-- 至少 3 道应用/分析题。
-- 每题 4 个选项，错误选项具有迷惑性。
-- 返回 JSON 数组。
+出题规则：
+- 至少 5 道题要求学习者将知识应用于新情境、分析案例、评价观点或比较概念。
+- 避免直接问"XX的定义是什么"，多采用"如果……那么……"或"为什么……"的形式。
+- 每个错误选项都应代表一个常见的误解或混淆点。
+- 每题必须包含 explanation 字段，详细解释正确答案的理由以及错误选项的误导之处。
 
-格式：[{{"question":"...","options":["A","B","C","D"],"correct_index":0,"explanation":"..."}}]"""
+返回格式（纯 JSON 数组，10 个元素）：
+[
+  {{
+    "question": "题目文字",
+    "options": ["A. ...", "B. ...", "C. ...", "D. ..."],
+    "correct_index": 0,
+    "dimension": "应用/分析/评价...",
+    "bloom_level": "apply/analyze/evaluate...",
+    "explanation": "详细解释...",
+    "knowledge_points": ["相关知识点"]
+  }}
+]"""
 
     from services.llm_service import LLMService
     llm = LLMService()
-    try:
-        result = await llm.chat_json(
-            prompt,
-            temperature=0.5,
-            max_tokens=1536,
-        )
-    except Exception as e:
-        print(f"[deep-quiz] LLM 异常: {e}")
-        return []
-
-    if isinstance(result, list) and len(result) >= 6:
-        # 补充至 10 题（复制最后 4 题，简单补全）
+    result = await llm.chat_json(prompt, temperature=0.4, max_tokens=4096)
+    if isinstance(result, list) and len(result) >= 8:
         while len(result) < 10:
             result.append(result[-1])
         return result[:10]
-    else:
-        print(f"[deep-quiz] 返回无效: {type(result)}")
-        return []
+    return []
