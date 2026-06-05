@@ -386,9 +386,20 @@ async def generate_deep_quiz_10(
 ]"""
 
     from services.llm_service import LLMService
+    import random
     llm = LLMService()
     result = await llm.chat_json(prompt, temperature=0.4, max_tokens=4096)
     if isinstance(result, list) and len(result) >= 8:
+        for q in result:
+            options = q.get("options", [])
+            if options and isinstance(options, list):
+                idx = int(q.get("correct_index", 0))
+                if 0 <= idx < len(options):
+                    correct_text = options[idx]
+                    random.shuffle(options)
+                    q["options"] = options
+                    q["correct_index"] = options.index(correct_text)
+                    q["correct_answer"] = chr(ord("A") + q["correct_index"])
         while len(result) < 10:
             result.append(result[-1])
         return result[:10]

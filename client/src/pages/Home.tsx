@@ -250,6 +250,11 @@ const Home = () => {
                 status={course.status}
                 threeAskProgress={course.threeAskProgress}
                 lastAccessedAt={course.lastAccessed}
+                onDelete={(courseId) => {
+                  if (window.confirm('确定删除该课程？')) {
+                    deleteCourse(courseId)
+                  }
+                }}
               />
             </div>
           ))}
