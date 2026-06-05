@@ -1,5 +1,5 @@
 import { memo, useState, useCallback } from 'react'
-import { CheckCircleIcon, ChevronRightIcon } from '../ui/Icons'
+import { CheckCircleIcon, XIcon } from '../ui/Icons'
 
 interface QuizPlayerProps {
   questions: any[]
@@ -9,23 +9,53 @@ interface QuizPlayerProps {
 }
 
 const dimensionColors: Record<string, string> = {
-  remember: 'bg-purple-500',
-  understand: 'bg-blue-500',
-  apply: 'bg-green-500',
-  analyze: 'bg-orange-500',
-  evaluate: 'bg-red-500',
-  create: 'bg-pink-500',
+  记忆: 'bg-purple-500',
+  理解: 'bg-blue-500',
+  应用: 'bg-green-500',
+  分析: 'bg-orange-500',
+  评价: 'bg-red-500',
+  创造: 'bg-pink-500',
 }
 
 const QuizPlayer = memo(({ questions, currentIndex, onAnswer, onNext }: QuizPlayerProps) => {
-  const [selectedAnswer, setSelectedAnswer] = useState<string>('')
+  const [selectedIndex, setSelectedIndex] = useState<number>(-1)
+  const [showFeedback, setShowFeedback] = useState(false)
   const question = questions[currentIndex]
   const progress = ((currentIndex + 1) / questions.length) * 100
 
-  const handleSelectAnswer = useCallback((answer: string) => {
-    setSelectedAnswer(answer)
-    onAnswer(question.id, answer)
-  }, [question.id, onAnswer])
+  const correctAnswer = question.correct_answer || ''
+  const correctIndex = correctAnswer.charCodeAt(0) - 65 // A=0, B=1, C=2, D=3
+  const isCorrect = selectedIndex === correctIndex
+
+  const handleSelectAnswer = useCallback((option: string, index: number) => {
+    if (showFeedback) return // 防止重复点击
+    const letter = String.fromCharCode(65 + index)
+    setSelectedIndex(index)
+    setShowFeedback(true)
+    onAnswer(question.id, letter)
+  }, [question.id, onAnswer, showFeedback])
+
+  const handleNext = useCallback(() => {
+    setSelectedIndex(-1)
+    setShowFeedback(false)
+    onNext()
+  }, [onNext])
+
+  const getOptionClass = (index: number) => {
+    if (!showFeedback) {
+      return selectedIndex === index
+        ? 'bg-blue-100 border-2 border-blue-500 dark:bg-blue-900/30'
+        : 'bg-gray-50 border-2 border-transparent dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600'
+    }
+    // 显示反馈后
+    if (index === correctIndex) {
+      return 'bg-green-100 border-2 border-green-500 dark:bg-green-900/30'
+    }
+    if (selectedIndex === index && index !== correctIndex) {
+      return 'bg-red-100 border-2 border-red-500 dark:bg-red-900/30'
+    }
+    return 'bg-gray-50 border-2 border-transparent dark:bg-gray-700 opacity-60'
+  }
 
   return (
     <div className="max-w-lg mx-auto p-4">
@@ -45,7 +75,7 @@ const QuizPlayer = memo(({ questions, currentIndex, onAnswer, onNext }: QuizPlay
 
       {/* 维度标签 */}
       <div className="flex items-center gap-2 mb-4">
-        <span className={`${dimensionColors[question.dimension]} text-white text-xs px-2 py-1 rounded`}>
+        <span className={`${dimensionColors[question.dimension] || 'bg-gray-500'} text-white text-xs px-2 py-1 rounded`}>
           {question.dimension}
         </span>
         <span className="text-xs text-gray-400">
@@ -63,24 +93,23 @@ const QuizPlayer = memo(({ questions, currentIndex, onAnswer, onNext }: QuizPlay
         {question.options && (
           <div className="space-y-3">
             {question.options.map((option: string, index: number) => {
-              const isSelected = selectedAnswer === option
+              const letter = String.fromCharCode(65 + index)
               return (
                 <button
                   key={index}
-                  onClick={() => handleSelectAnswer(option)}
-                  className={`w-full p-4 rounded-xl text-left transition-all ${
-                    isSelected
-                      ? 'bg-blue-100 border-2 border-blue-500 dark:bg-blue-900/30'
-                      : 'bg-gray-50 border-2 border-transparent dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600'
-                  }`}
+                  onClick={() => handleSelectAnswer(option, index)}
+                  disabled={showFeedback}
+                  className={`w-full p-4 rounded-xl text-left transition-all ${getOptionClass(index)}`}
                 >
                   <div className="flex items-start gap-3">
                     <span className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                      isSelected
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300'
+                      index === correctIndex
+                        ? 'bg-green-500 text-white'
+                        : selectedIndex === index
+                          ? 'bg-red-500 text-white'
+                          : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300'
                     }`}>
-                      {String.fromCharCode(65 + index)}
+                      {letter}
                     </span>
                     <span className="text-gray-700 dark:text-gray-200 break-words min-w-0 flex-1 leading-6 pt-1">
                       {option}
@@ -95,19 +124,39 @@ const QuizPlayer = memo(({ questions, currentIndex, onAnswer, onNext }: QuizPlay
         {/* 简答题/编程题 */}
         {!question.options && (
           <textarea
-            value={selectedAnswer}
-            onChange={(e) => handleSelectAnswer(e.target.value)}
             placeholder="请输入你的答案..."
             className="w-full p-4 rounded-xl border-2 border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-200 resize-none focus:border-blue-500 focus:outline-none"
             rows={6}
           />
         )}
+
+        {/* 即时反馈区域 */}
+        {showFeedback && (
+          <div className="mt-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-700">
+            <div className="flex items-center gap-2 mb-2">
+              {isCorrect ? (
+                <>
+                  <CheckCircleIcon className="w-5 h-5 text-green-500" />
+                  <span className="font-medium text-green-600 dark:text-green-400">回答正确！</span>
+                </>
+              ) : (
+                <>
+                  <XIcon className="w-5 h-5 text-red-500" />
+                  <span className="font-medium text-red-600 dark:text-red-400">回答错误</span>
+                </>
+              )}
+            </div>
+            {question.explanation && (
+              <p className="text-sm text-gray-600 dark:text-gray-300">{question.explanation}</p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 下一题按钮 */}
       <button
-        onClick={onNext}
-        disabled={!selectedAnswer}
+        onClick={handleNext}
+        disabled={!showFeedback}
         className="w-full py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:from-blue-600 hover:to-blue-700 transition-all"
       >
         {currentIndex === questions.length - 1 ? '提交测评' : '下一题'}
