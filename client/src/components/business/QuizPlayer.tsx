@@ -120,10 +120,14 @@ const QuizPlayer = memo(({ questions, currentIndex, onAnswer, onNext }: QuizPlay
                 >
                   <div className="flex items-start gap-3">
                     <span className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                      index === correctIndex
-                        ? 'bg-green-500 text-white'
+                      showFeedback
+                        ? index === correctIndex
+                          ? 'bg-green-500 text-white'
+                          : index === selectedIndex
+                            ? 'bg-red-500 text-white'
+                            : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300'
                         : selectedIndex === index
-                          ? 'bg-red-500 text-white'
+                          ? 'bg-blue-500 text-white'
                           : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300'
                     }`}>
                       {letter}
