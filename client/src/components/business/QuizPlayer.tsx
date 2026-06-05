@@ -30,10 +30,11 @@ const QuizPlayer = memo(({ questions, currentIndex, onAnswer, onNext }: QuizPlay
   const handleSelectAnswer = useCallback((option: string, index: number) => {
     if (showFeedback) return // 防止重复点击
     const letter = String.fromCharCode(65 + index)
+    console.log('[QuizPlayer] 选择:', { option, index, letter, correctAnswer, correctIndex, questionId: question.id })
     setSelectedIndex(index)
     setShowFeedback(true)
     onAnswer(question.id, letter)
-  }, [question.id, onAnswer, showFeedback])
+  }, [question.id, onAnswer, showFeedback, correctAnswer, correctIndex])
 
   const handleNext = useCallback(() => {
     setSelectedIndex(-1)

@@ -136,6 +136,15 @@ const QuizCenter = () => {
           }
         })
 
+        // 调用后端 API 提交测评
+        let reportData = null
+        try {
+          reportData = await coursesApi.completeQuiz(courseId!, answerList)
+          console.log('[QuizCenter] 后端报告:', reportData)
+        } catch (e) {
+          console.warn('[QuizCenter] 后端提交失败，使用本地计算:', e)
+        }
+
         const correct = answerList.filter((a) => a.isCorrect).length
         const dimScores: Record<string, number[]> = {}
         answerList.forEach((a) => {
@@ -149,12 +158,12 @@ const QuizCenter = () => {
 
         setSubmitted(true)
         setResults({
-          correct,
-          total: questions.length,
+          correct: reportData?.correctCount ?? correct,
+          total: reportData?.totalQuestions ?? questions.length,
           radar: {
-            dimensions: Object.keys(abilityScores).map((name) => ({ name, max: 100 })),
-            values: Object.values(abilityScores),
-            average: correct / questions.length * 100,
+            dimensions: Object.keys(reportData?.abilityScores ?? abilityScores).map((name) => ({ name, max: 100 })),
+            values: Object.values(reportData?.abilityScores ?? abilityScores),
+            average: (reportData?.accuracy ?? (correct / questions.length * 100)),
             strongest: '',
             weakest: '',
           },
@@ -163,7 +172,7 @@ const QuizCenter = () => {
         setSubmittingAll(false)
       }
     }
-  }, [currentIndex, questions, answers])
+  }, [currentIndex, questions, answers, courseId])
 
   if (loading) {
     return (
