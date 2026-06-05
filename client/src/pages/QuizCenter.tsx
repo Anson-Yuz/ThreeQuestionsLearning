@@ -16,7 +16,23 @@ interface QuizItem {
   question: string
   options?: string[]
   correct_answer: string
+  correctIndex?: number
   explanation?: string
+}
+
+// 统一字段映射：确保每道题都有 correctIndex（数字）和 correct_answer（字母）
+const normalizeQuiz = (rawList: any[]): QuizItem[] => {
+  return rawList.map(q => {
+    const idx = Number(q.correct_index ?? q.correctIndex ?? 0)
+    return {
+      ...q,
+      id: q.id || q.question_id || `q_${idx}`,
+      correctIndex: idx,
+      correct_answer: q.correct_answer || (q.options ? q.options[idx]?.charAt(0) : ''),
+      options: q.options || [],
+      question: q.question || q.content || '',
+    }
+  })
 }
 
 const QuizCenter = () => {
@@ -25,7 +41,7 @@ const QuizCenter = () => {
   const [questions, setQuestions] = useState<QuizItem[]>([])
   const [loading, setLoading] = useState(true)
   const [currentIndex, setCurrentIndex] = useState(0)
-  const [answers, setAnswers] = useState<Record<string, string>>({})
+  const [answers, setAnswers] = useState<Record<string, { answer: string; isCorrect: boolean }>>({})
   const [submitted, setSubmitted] = useState(false)
   const [results, setResults] = useState<any>(null)
   const [submittingAll, setSubmittingAll] = useState(false)
@@ -49,7 +65,7 @@ const QuizCenter = () => {
       const cacheRes = await coursesApi.getCachedQuizzes(courseId)
       if (cacheRes.status === 'ready' && cacheRes.data?.length > 0) {
         if (mountedRef.current) {
-          setQuestions(cacheRes.data as unknown as QuizItem[])
+          setQuestions(normalizeQuiz(cacheRes.data))
           setQuizSource('cache')
           setLoading(false)
           return
@@ -63,7 +79,7 @@ const QuizCenter = () => {
     try {
       const quickRes = await coursesApi.getQuickQuiz(courseId)
       if (quickRes.questions?.length > 0 && mountedRef.current) {
-        setQuestions(quickRes.questions as unknown as QuizItem[])
+        setQuestions(normalizeQuiz(quickRes.questions))
         setQuizSource('quick')
         setLoading(false)
       } else {
@@ -84,7 +100,7 @@ const QuizCenter = () => {
       try {
         const payload = JSON.parse(e.data)
         if (payload?.quizzes?.length > 0 && mountedRef.current) {
-          setQuestions(payload.quizzes as unknown as QuizItem[])
+          setQuestions(normalizeQuiz(payload.quizzes))
           setQuizSource('llm')
           setLoading(false)
           es.close()
@@ -112,8 +128,8 @@ const QuizCenter = () => {
 
   const handleBack = () => navigate(`/learning/${courseId}`)
 
-  const handleAnswer = useCallback((questionId: string, answer: string) => {
-    setAnswers((prev) => ({ ...prev, [questionId]: answer }))
+  const handleAnswer = useCallback((questionId: string, answer: string, isCorrect: boolean) => {
+    setAnswers((prev) => ({ ...prev, [questionId]: { answer, isCorrect } }))
   }, [])
 
   const handleNext = useCallback(async () => {
@@ -122,13 +138,13 @@ const QuizCenter = () => {
     } else {
       setSubmittingAll(true)
       try {
-        const answerList = Object.entries(answers).map(([qid, ans]) => {
+        const answerList = Object.entries(answers).map(([qid, { answer, isCorrect }]) => {
           const q = questions.find((q) => q.id === qid)
           return {
             questionId: qid,
-            userAnswer: ans,
+            userAnswer: answer,
             correctAnswer: q?.correct_answer || '',
-            isCorrect: ans === q?.correct_answer,
+            isCorrect,
             dimension: q?.dimension || '',
             content: q?.question || '',
             explanation: q?.explanation || '',

@@ -114,7 +114,6 @@ class QuizSubmit(BaseModel):
     time_spent: int = 0
 
 class QuizComplete(BaseModel):
-    course_id: str
     answers: List[dict]
 
 # ============================================

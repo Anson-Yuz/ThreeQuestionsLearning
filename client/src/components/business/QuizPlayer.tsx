@@ -4,7 +4,7 @@ import { CheckCircleIcon, XIcon } from '../ui/Icons'
 interface QuizPlayerProps {
   questions: any[]
   currentIndex: number
-  onAnswer: (questionId: string, answer: string) => void
+  onAnswer: (questionId: string, answer: string, isCorrect: boolean) => void
   onNext: () => void
 }
 
@@ -23,18 +23,29 @@ const QuizPlayer = memo(({ questions, currentIndex, onAnswer, onNext }: QuizPlay
   const question = questions[currentIndex]
   const progress = ((currentIndex + 1) / questions.length) * 100
 
-  const correctAnswer = question.correct_answer || ''
-  const correctIndex = correctAnswer.charCodeAt(0) - 65 // A=0, B=1, C=2, D=3
+  // 从题目对象直接取 correctIndex（已在前端 normalizeQuiz规范化为数字）
+  const correctIndex = Number(question.correctIndex ?? question.correct_index ?? 0)
+  const correctAnswer = String.fromCharCode(65 + correctIndex) // "A", "B", "C", "D"
   const isCorrect = selectedIndex === correctIndex
 
   const handleSelectAnswer = useCallback((option: string, index: number) => {
-    if (showFeedback) return // 防止重复点击
+    if (showFeedback) return
     const letter = String.fromCharCode(65 + index)
-    console.log('[QuizPlayer] 选择:', { option, index, letter, correctAnswer, correctIndex, questionId: question.id })
+    const isCorrectAnswer = index === correctIndex
+    console.log('[QuizPlayer] 选择:', {
+      option,
+      index,
+      letter,
+      correctIndex,
+      correctAnswer,
+      isCorrect: isCorrectAnswer,
+      questionId: question.id,
+    })
     setSelectedIndex(index)
     setShowFeedback(true)
-    onAnswer(question.id, letter)
-  }, [question.id, onAnswer, showFeedback, correctAnswer, correctIndex])
+    //传入 isCorrect，让父组件直接使用
+    onAnswer(question.id, letter, isCorrectAnswer)
+  }, [question.id, onAnswer, showFeedback, correctIndex, correctAnswer])
 
   const handleNext = useCallback(() => {
     setSelectedIndex(-1)
@@ -48,7 +59,6 @@ const QuizPlayer = memo(({ questions, currentIndex, onAnswer, onNext }: QuizPlay
         ? 'bg-blue-100 border-2 border-blue-500 dark:bg-blue-900/30'
         : 'bg-gray-50 border-2 border-transparent dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600'
     }
-    // 显示反馈后
     if (index === correctIndex) {
       return 'bg-green-100 border-2 border-green-500 dark:bg-green-900/30'
     }
