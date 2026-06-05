@@ -20,17 +20,22 @@ interface QuizItem {
   explanation?: string
 }
 
-// 统一字段映射：确保每道题都有 correctIndex（数字）和 correct_answer（字母）
+// 统一字段映射：清除多余字段，确保 correctIndex 为有效数字
 const normalizeQuiz = (rawList: any[]): QuizItem[] => {
-  return rawList.map(q => {
+  return rawList.map((q, i) => {
     const idx = Number(q.correct_index ?? q.correctIndex ?? 0)
+    const correctLetter = String.fromCharCode(65 + idx)
     return {
-      ...q,
-      id: q.id || q.question_id || `q_${idx}`,
-      correctIndex: idx,
-      correct_answer: q.correct_answer || (q.options ? q.options[idx]?.charAt(0) : ''),
-      options: q.options || [],
+      id: q.id || q.question_id || `q_${i}`,
+      dimension: q.dimension || '理解',
+      bloom_level: q.bloom_level || 'understand',
+      difficulty: Number(q.difficulty ?? 0.5),
+      question_type: q.question_type || 'multiple_choice',
       question: q.question || q.content || '',
+      options: q.options || [],
+      correct_answer: q.correct_answer || correctLetter,
+      correctIndex: idx,
+      explanation: q.explanation || '',
     }
   })
 }
@@ -249,6 +254,7 @@ const QuizCenter = () => {
       <NavBar title="测评中心" showBack onLeftClick={handleBack} rightText={`${currentIndex + 1}/${questions.length}`} />
       <div className="flex-1 overflow-y-auto">
         <QuizPlayer
+          key={currentIndex}
           questions={questions}
           currentIndex={currentIndex}
           onAnswer={handleAnswer}
