@@ -16,7 +16,10 @@ async def get_weekly_trend():
     one_day_ms = 24 * 3600 * 1000
     week_ago = now - 7 * one_day_ms
 
+    from datetime import datetime as dt, timedelta
+
     with get_db() as conn:
+        # 1. 优先从 learning_events 获取数据
         rows = conn.execute("""
             SELECT
                 date(created_at / 1000, 'unixepoch', 'localtime') AS day,
@@ -27,8 +30,20 @@ async def get_weekly_trend():
             ORDER BY day
         """, (week_ago,)).fetchall()
 
-    from datetime import datetime as dt, timedelta
+        # 2. 如果 learning_events 无数据，回退到 quiz_records 统计每日答题数
+        use_quiz_fallback = len(rows) == 0
+        if use_quiz_fallback:
+            rows = conn.execute("""
+                SELECT
+                    date(created_at / 1000, 'unixepoch', 'localtime') AS day,
+                    COUNT(*) AS quiz_count
+                FROM quiz_records
+                WHERE created_at >= ?
+                GROUP BY day
+                ORDER BY day
+            """, (week_ago,)).fetchall()
 
+    # 补全7天（即使没有数据也要返回7个条目，value=0）
     today = dt.now().date()
     result = {}
     for i in range(6, -1, -1):
@@ -40,15 +55,28 @@ async def get_weekly_trend():
 
     day_names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
     trend_data = []
-    for idx, (day_str, seconds) in enumerate(result.items()):
-        hours = seconds / 3600
+
+    if use_quiz_fallback:
+        # 基于答题数：最大值归一化
+        max_count = max(result.values()) if result.values() else 1
+        for idx, (day_str, count) in enumerate(result.items()):
+            value = round(count / max_count, 2) if max_count > 0 else 0
+            trend_data.append({
+                "day": day_names[idx],
+                "value": value,
+                "seconds": count,
+            })
+    else:
+        # 基于学习时长：按每日最大4小时归一化
         max_hours = 4.0
-        value = min(hours / max_hours, 1.0) if max_hours > 0 else 0
-        trend_data.append({
-            "day": day_names[idx],
-            "value": round(value, 2),
-            "seconds": seconds,
-        })
+        for idx, (day_str, seconds) in enumerate(result.items()):
+            hours = seconds / 3600
+            value = min(hours / max_hours, 1.0) if max_hours > 0 else 0
+            trend_data.append({
+                "day": day_names[idx],
+                "value": round(value, 2),
+                "seconds": seconds,
+            })
 
     return {"trend": trend_data}
 
