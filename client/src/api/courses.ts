@@ -13,7 +13,7 @@ export interface Course {
     question3: boolean;
   };
   createdAt: number;
-  lastAccessed: number;
+  last_accessed: number;
 }
 
 export interface CreateCourseRequest {
