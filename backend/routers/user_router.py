@@ -6,7 +6,7 @@ import io
 import time
 import datetime
 
-router = APIRouter(prefix="/user", tags=["用户"])
+router = APIRouter(tags=["用户"])
 
 
 @router.get("/weekly-trend")
