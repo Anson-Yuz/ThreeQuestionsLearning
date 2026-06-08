@@ -248,7 +248,7 @@ const Home = () => {
                   progress={course.progress}
                   status={course.status}
                   threeAskProgress={course.threeAskProgress}
-                  lastAccessedAt={course.lastAccessed}
+                  lastAccessedAt={course.last_accessed}
                   onDelete={(courseId) => {
                     if (window.confirm('确定删除该课程？')) {
                       deleteCourse(courseId)
