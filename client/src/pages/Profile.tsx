@@ -28,9 +28,10 @@ const Profile = () => {
       const res = await fetch('/api/user/weekly-trend')
       const data = await res.json()
       const trend = (data.trend || []).map((item: { day: string; value: any; count: number }) => ({
-        ...item,
+        day: item.day,
         value: Number(item.value) || 0,
       }))
+      console.log('weekly-trend processed:', trend)
       setWeeklyTrend(trend)
     } catch {
       console.error('获取周趋势失败')
@@ -116,7 +117,7 @@ const Profile = () => {
                 <div key={idx} className="flex-1 flex flex-col items-center gap-1.5">
                   <div
                     className="w-full bg-gradient-to-t from-blue-500 to-blue-400 rounded-t-md"
-                    style={{ height: `${item.value * 100}%`, minHeight: 4 }}
+                    style={{ height: `${Math.max(item.value * 100, 4)}%`, minHeight: 4 }}
                   />
                   <span className="text-[11px] text-gray-400 font-medium">{item.day}</span>
                 </div>
