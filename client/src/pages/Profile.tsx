@@ -10,11 +10,10 @@ import {
 } from '../components/ui/Icons'
 import ThemeToggle from '../components/ui/ThemeToggle'
 import { useCourseStore } from '../stores/courseStore'
-import { coursesApi } from '../api/courses'
 import toast from 'react-hot-toast'
 
 const Profile = () => {
-  const { courses, fetchCourses } = useCourseStore()
+  const { courses, fetchCourses, archiveCourse } = useCourseStore()
   const navigate = useNavigate()
   const activeCount = courses.filter((c) => c.status === 'active' || c.status === 'completed').length
   const completedCount = courses.filter((c) => c.status === 'completed').length
@@ -42,16 +41,15 @@ const Profile = () => {
       return
     }
     const activeCourse = courses.find((c) => c.status !== 'archived')
-    if (activeCourse) {
-      try {
-        await coursesApi.archive(activeCourse.id)
-        toast.success(`课程"${activeCourse.title}"已归档`)
-        fetchCourses()
-      } catch {
-        toast.error('归档失败')
-      }
-    } else {
+    if (!activeCourse) {
       toast.success('所有课程已归档')
+      return
+    }
+    try {
+      await archiveCourse(activeCourse.id)
+      toast.success(`课程"${activeCourse.title}"已归档`)
+    } catch {
+      toast.error('归档失败')
     }
   }
 
