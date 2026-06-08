@@ -27,7 +27,11 @@ const Profile = () => {
     try {
       const res = await fetch('/api/user/weekly-trend')
       const data = await res.json()
-      setWeeklyTrend(data.trend || [])
+      const trend = (data.trend || []).map((item: { day: string; value: any; count: number }) => ({
+        ...item,
+        value: Number(item.value) || 0,
+      }))
+      setWeeklyTrend(trend)
     } catch {
       console.error('获取周趋势失败')
     }

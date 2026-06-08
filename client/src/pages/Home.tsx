@@ -34,6 +34,15 @@ const Home = () => {
     fetchCourses()
   }, [fetchCourses])
 
+  // 页面可见时刷新课程列表
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') fetchCourses()
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
+  }, [fetchCourses])
+
   // 清理定时器
   useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current) }, [])
 
@@ -239,7 +248,7 @@ const Home = () => {
                   progress={course.progress}
                   status={course.status}
                   threeAskProgress={course.threeAskProgress}
-                  lastAccessedAt={course.lastAccessed}
+                  lastAccessedAt={course.last_accessed}
                   onDelete={(courseId) => {
                     if (window.confirm('确定删除该课程？')) {
                       deleteCourse(courseId)
