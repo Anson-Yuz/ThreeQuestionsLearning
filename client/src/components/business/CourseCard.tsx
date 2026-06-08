@@ -37,13 +37,19 @@ export const CourseCard = memo(({
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
+  const [now, setNow] = useState(Date.now())
+
+  // 每分钟刷新一次相对时间
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60000)
+    return () => clearInterval(timer)
+  }, [])
 
   // 相对时间显示
   const relativeTime = useMemo(() => {
     if (!lastAccessedAt || lastAccessedAt <= 0) {
       return '未学习'
     }
-    const now = Date.now()
     const diff = now - lastAccessedAt
     const minutes = Math.floor(diff / 60000)
     const hours = Math.floor(diff / 3600000)
@@ -54,7 +60,7 @@ export const CourseCard = memo(({
     if (hours < 24) return `${hours}小时前`
     if (days < 30) return `${days}天前`
     return new Date(lastAccessedAt).toLocaleDateString('zh-CN')
-  }, [lastAccessedAt])
+  }, [lastAccessedAt, now])
 
   const isCompleted = status === 'completed'
   const isArchived = status === 'archived'
