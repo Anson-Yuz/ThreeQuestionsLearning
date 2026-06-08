@@ -327,13 +327,18 @@ async def force_deep_quiz(course_id: str):
 
 @router.patch("/{course_id}/touch")
 async def touch_course(course_id: str):
-    """更新课程的最后访问时间"""
+    """更新课程的最后访问时间，并记录学习事件"""
     now = int(time.time() * 1000)
+    event_id = str(uuid.uuid4())
     with get_db() as conn:
         conn.execute(
             "UPDATE courses SET last_accessed = ?, updated_at = ? WHERE id = ?",
             (now, now, course_id)
         )
+        conn.execute("""
+            INSERT INTO learning_events (id, course_id, event_type, duration, metadata, created_at)
+            VALUES (?, ?, 'view_course', 0, '', ?)
+        """, (event_id, course_id, now))
         conn.commit()
     return {"status": "ok", "lastAccessed": now}
 
