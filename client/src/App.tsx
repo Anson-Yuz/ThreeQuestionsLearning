@@ -8,6 +8,7 @@ import QuizPlay from './pages/QuizPlay'
 import QuizReport from './pages/QuizReport'
 import Profile from './pages/Profile'
 import UploadHistory from './pages/UploadHistory'
+import Settings from './pages/Settings'
 import { initTheme } from './stores/themeStore'
 
 function App() {
@@ -22,6 +23,7 @@ function App() {
                <Route path="home" element={<Home />} />
         <Route path="profile" element={<Profile />} />
         <Route path="upload-history" element={<UploadHistory />} />
+        <Route path="settings" element={<Settings />} />
         <Route path="learning/:courseId" element={<LearningSpace />} />
         <Route path="quiz/:courseId" element={<QuizCenter />} />
       </Route>

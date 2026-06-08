@@ -80,7 +80,7 @@ const Profile = () => {
 
   // 设置
   const handleSettings = () => {
-    toast('设置页面即将上线，目前可切换深色模式')
+    navigate('/settings')
   }
 
   return (
