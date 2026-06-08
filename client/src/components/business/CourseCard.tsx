@@ -40,6 +40,9 @@ export const CourseCard = memo(({
 
   // 相对时间显示
   const relativeTime = useMemo(() => {
+    if (!lastAccessedAt || lastAccessedAt <= 0) {
+      return '未学习'
+    }
     const now = Date.now()
     const diff = now - lastAccessedAt
     const minutes = Math.floor(diff / 60000)

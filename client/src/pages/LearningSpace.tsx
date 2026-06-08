@@ -57,6 +57,8 @@ const LearningSpace = () => {
     coursesApi.get(courseId)
       .then((c) => { setCourse(c); setInitialLoading(false) })
       .catch((e) => { setPageError(friendlyMsg(e)); setInitialLoading(false) })
+    // 触碰更新最近访问时间
+    fetch(`/api/courses/${courseId}/touch`, { method: 'PATCH' }).catch(() => {})
   }, [courseId])
 
   const handleRefreshGraph = useCallback(async () => {
