@@ -165,26 +165,15 @@ const Home = () => {
       </div>
 
       {/* 课程列表 */}
+       {/* 课程列表 */}
       <div className="page-container pt-4 space-y-4">
+        {/* 标题行 */}
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold text-gray-900 dark:text-white">我的课程</h2>
           <span className="text-sm text-gray-400">{activeCourses.length} 个课程</span>
         </div>
 
-        {activeCourses.length === 0 && error && (
-          <EmptyState title="无法载入" loading={loading} />
-        )}
-        {activeCourses.length === 0 && !error && (
-          <EmptyState
-            title="尚无课程"
-            description="搜索问题或浏览推荐，开始学习"
-            action="去搜索"
-            onAction={() => searchInputRef.current?.focus()}
-            loading={loading}
-          />
-        )}
-
-        {/* 课程库内搜索（FTS5 < 50ms）—— 独立占位，不受卡片数量影响 */}
+        {/* 搜索栏 —— 始终固定在标题下方，不受 EmptyState 影响 */}
         <div className="relative mb-3">
           <div className="absolute left-3 top-1/2 -translate-y-1/2">
             <SearchIcon className="w-4 h-4 text-gray-400" />
@@ -238,26 +227,38 @@ const Home = () => {
           </div>
         )}
 
-        {/* 课程卡片列表 */}
+        {/* 课程卡片列表区域 — 包含 EmptyState 或 卡片 */}
         <div className="space-y-3">
-          {activeCourses.map((course) => (
-            <div key={course.id}>
-              <CourseCard
-                id={course.id}
-                title={course.title}
-                keywords={course.keywords}
-                progress={course.progress}
-                status={course.status}
-                threeAskProgress={course.threeAskProgress}
-                lastAccessedAt={course.lastAccessed}
-                onDelete={(courseId) => {
-                  if (window.confirm('确定删除该课程？')) {
-                    deleteCourse(courseId)
-                  }
-                }}
-              />
-            </div>
-          ))}
+          {activeCourses.length > 0 ? (
+            activeCourses.map((course) => (
+              <div key={course.id}>
+                <CourseCard
+                  id={course.id}
+                  title={course.title}
+                  keywords={course.keywords}
+                  progress={course.progress}
+                  status={course.status}
+                  threeAskProgress={course.threeAskProgress}
+                  lastAccessedAt={course.lastAccessed}
+                  onDelete={(courseId) => {
+                    if (window.confirm('确定删除该课程？')) {
+                      deleteCourse(courseId)
+                    }
+                  }}
+                />
+              </div>
+            ))
+          ) : error ? (
+            <EmptyState title="无法载入" loading={loading} />
+          ) : (
+            <EmptyState
+              title="尚无课程"
+              description="搜索问题或浏览推荐，开始学习"
+              action="去搜索"
+              onAction={() => searchInputRef.current?.focus()}
+              loading={loading}
+            />
+          )}
         </div>
       </div>
 
