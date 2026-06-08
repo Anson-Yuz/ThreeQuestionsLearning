@@ -133,7 +133,7 @@ const QuizPlayer = memo(({ questions, currentIndex, onAnswer, onNext }: QuizPlay
                       {letter}
                     </span>
                     <span className="text-gray-700 dark:text-gray-200 break-words min-w-0 flex-1 leading-6 pt-1">
-                      {option}
+                      {option.replace(/^[A-D][.)、]\s*/, '')}
                     </span>
                   </div>
                 </button>
