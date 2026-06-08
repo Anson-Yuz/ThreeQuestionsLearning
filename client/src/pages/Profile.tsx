@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   PersonIcon,
-  ArchiveIcon,
   UploadIcon,
   DownloadIcon,
   GearIcon,
@@ -13,7 +12,7 @@ import { useCourseStore } from '../stores/courseStore'
 import toast from 'react-hot-toast'
 
 const Profile = () => {
-  const { courses, fetchCourses, archiveCourse } = useCourseStore()
+  const { courses, fetchCourses } = useCourseStore()
   const navigate = useNavigate()
   const activeCount = courses.filter((c) => c.status === 'active' || c.status === 'completed').length
   const completedCount = courses.filter((c) => c.status === 'completed').length
@@ -31,25 +30,6 @@ const Profile = () => {
       setWeeklyTrend(data.trend || [])
     } catch {
       console.error('获取周趋势失败')
-    }
-  }
-
-  // 课程归档
-  const handleArchive = async () => {
-    if (!courses || courses.length === 0) {
-      toast.error('暂无课程可归档')
-      return
-    }
-    const activeCourse = courses.find((c) => c.status !== 'archived')
-    if (!activeCourse) {
-      toast.success('所有课程已归档')
-      return
-    }
-    try {
-      await archiveCourse(activeCourse.id)
-      toast.success(`课程"${activeCourse.title}"已归档`)
-    } catch {
-      toast.error('归档失败')
     }
   }
 
@@ -145,7 +125,6 @@ const Profile = () => {
 
         {/* 功能列表 */}
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden divide-y divide-gray-100 dark:divide-gray-700">
-          <FunctionItem icon={<ArchiveIcon className="w-5 h-5" />} label="课程归档" onClick={handleArchive} />
           <FunctionItem icon={<UploadIcon className="w-5 h-5" />} label="资料上传历史" onClick={handleUploadHistory} />
           <FunctionItem icon={<DownloadIcon className="w-5 h-5" />} label="数据导出" onClick={handleExportData} />
           <FunctionItem icon={<GearIcon className="w-5 h-5" />} label="设置" onClick={handleSettings} />
