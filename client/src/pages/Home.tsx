@@ -172,10 +172,7 @@ const Home = () => {
         </div>
 
         {activeCourses.length === 0 && error && (
-          <EmptyState
-            title="无法载入"
-            loading={loading}
-          />
+          <EmptyState title="无法载入" loading={loading} />
         )}
         {activeCourses.length === 0 && !error && (
           <EmptyState
@@ -187,7 +184,7 @@ const Home = () => {
           />
         )}
 
-        {/* 课程库内搜索（FTS5 < 50ms） */}
+        {/* 课程库内搜索（FTS5 < 50ms）—— 独立占位，不受卡片数量影响 */}
         <div className="relative mb-3">
           <div className="absolute left-3 top-1/2 -translate-y-1/2">
             <SearchIcon className="w-4 h-4 text-gray-400" />
@@ -204,7 +201,7 @@ const Home = () => {
           )}
         </div>
 
-        {/* 搜索结果 */}
+        {/* 搜索结果 —— 只显示首页已有课程 */}
         {courseSearch.trim() && (
           <div className="mb-3 space-y-1.5">
             {courseSearching && courseSearchResults.length === 0 && (
@@ -213,32 +210,35 @@ const Home = () => {
             {!courseSearching && courseSearchResults.length === 0 && (
               <p className="text-xs text-gray-400 px-2 py-3 text-center">未找到匹配课程</p>
             )}
-            {courseSearchResults.map((r) => (
-              <button
-                key={r.id}
-                onClick={() => navigate(`/learning/${r.id}`)}
-                className="w-full text-left p-3 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl hover:border-blue-300 transition-colors"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-900 dark:text-white truncate flex-1">
-                    {r.title}
-                  </span>
-                  {r.doc_count !== undefined && (
-                    <span className="text-[10px] text-gray-400 ml-2 flex-shrink-0">
-                      {r.doc_count} 篇
+            {courseSearchResults
+              .filter((r) => activeCourses.some((c) => c.id === r.id))
+              .map((r) => (
+                <button
+                  key={r.id}
+                  onClick={() => navigate(`/learning/${r.id}`)}
+                  className="w-full text-left p-3 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl hover:border-blue-300 transition-colors"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-gray-900 dark:text-white truncate flex-1">
+                      {r.title}
                     </span>
+                    {r.doc_count !== undefined && (
+                      <span className="text-[10px] text-gray-400 ml-2 flex-shrink-0">
+                        {r.doc_count} 篇
+                      </span>
+                    )}
+                  </div>
+                  {r.snippet && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">
+                      {r.snippet}
+                    </p>
                   )}
-                </div>
-                {r.snippet && (
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">
-                    {r.snippet}
-                  </p>
-                )}
-              </button>
-            ))}
+                </button>
+              ))}
           </div>
         )}
 
+        {/* 课程卡片列表 */}
         <div className="space-y-3">
           {activeCourses.map((course) => (
             <div key={course.id}>
