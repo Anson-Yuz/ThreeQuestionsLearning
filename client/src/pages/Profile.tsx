@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   PersonIcon,
   ArchiveIcon,
@@ -14,6 +15,7 @@ import toast from 'react-hot-toast'
 
 const Profile = () => {
   const { courses, fetchCourses } = useCourseStore()
+  const navigate = useNavigate()
   const activeCount = courses.filter((c) => c.status === 'active' || c.status === 'completed').length
   const completedCount = courses.filter((c) => c.status === 'completed').length
   const [weeklyTrend, setWeeklyTrend] = useState<{ day: string; value: number }[]>([])
@@ -55,7 +57,7 @@ const Profile = () => {
 
   // 资料上传历史
   const handleUploadHistory = () => {
-    toast('资料上传历史功能即将上线')
+    navigate('/upload-history')
   }
 
   // 数据导出

@@ -80,3 +80,18 @@ async def export_user_data():
         media_type="application/json",
         headers={"Content-Disposition": "attachment; filename=learning_data.json"},
     )
+
+
+@router.get("/uploads")
+async def get_upload_history(limit: int = 50):
+    """获取用户上传文档历史"""
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT d.id, d.title, d.file_path, d.created_at, c.title as course_title
+            FROM documents d
+            JOIN courses c ON d.course_id = c.id
+            WHERE c.status != 'deleted'
+            ORDER BY d.created_at DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+    return {"uploads": [dict(row) for row in rows]}
